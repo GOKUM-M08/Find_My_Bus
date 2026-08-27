@@ -1,4 +1,4 @@
-# BusTrack (VandiVarudhu)
+# BusTrack (Find My Bus)
 
 School bus tracking system — Flutter parent/driver app, FastAPI backend,
 Supabase + Redis (Upstash) for data/caching, Firebase Cloud Messaging for
