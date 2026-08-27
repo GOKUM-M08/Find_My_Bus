@@ -32,12 +32,18 @@ class _TrackingScreenState extends State<TrackingScreen> {
   Set<Polyline> _routeLines = {};
   Set<Marker> _stopMarkers = {};
 
-  WebSocketChannel? _wsChannel;
+    WebSocketChannel? _wsChannel;
   LatLng _currentBusLocation = const LatLng(13.0827, 80.2707);
   double _busSpeed = 0;
   String _eta = "Calculating...";
   int _stopsAway = 0;
   Timer? _etaTimer;
+
+  // Whether the bus has broadcast a GPS point recently. Without this,
+  // an old row in `live_location` makes the bus look "Moving" forever
+  // even after the GPS device has been off for hours.
+  bool _isLive = false;
+  Timer? _liveCheckTimer;
 
   final supabase = Supabase.instance.client;
 
@@ -47,6 +53,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
     _loadRoute();
     _connectWebSocket();
     _loadInitialLocation();
+    _checkLiveStatus();
+    _liveCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _checkLiveStatus();
+    });
 
     // STEP 11.3 — fetch ETA once immediately, then refresh every 30 seconds.
     if (widget.stopId != null) {
@@ -54,7 +64,38 @@ class _TrackingScreenState extends State<TrackingScreen> {
       _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _fetchETA(widget.stopId!);
       });
+    } else {
+      // No specific stop selected (opened via the general "View on Map"
+      // button) — there's nothing to calculate ETA to, so say so instead
+      // of leaving the tile stuck on "Calculating..." forever.
+      _eta = "Select a stop for ETA";
     }
+  }
+
+  // Same freshness check used in stops_screen.dart: a bus is only
+  // considered live if it broadcast within the last 60 seconds.
+  Future<void> _checkLiveStatus() async {
+    final result = await supabase
+        .from('live_location')
+        .select('timestamp')
+        .eq('bus_id', widget.busId)
+        .maybeSingle();
+
+    bool live = false;
+    if (result != null && result['timestamp'] != null) {
+      final lastUpdate = DateTime.parse(result['timestamp']).toUtc();
+      final secondsAgo =
+          DateTime.now().toUtc().difference(lastUpdate).inSeconds;
+      live = secondsAgo < 60;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isLive = live;
+      if (!live && widget.stopId != null) {
+        _eta = "Bus offline";
+      }
+    });
   }
 
   Future<void> _loadInitialLocation() async {
@@ -184,11 +225,12 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
-  @override
+    @override
   void dispose() {
     _wsChannel?.sink.close();
     _mapController?.dispose();
     _etaTimer?.cancel();
+    _liveCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -248,11 +290,15 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         value: _eta,
                         icon: Icons.access_time,
                       ),
-                      _InfoTile(
+                                            _InfoTile(
                         label: 'Status',
-                        value: _busSpeed > 0 ? 'Moving' : 'Stopped',
+                        value: !_isLive
+                            ? 'Offline'
+                            : (_busSpeed > 1 ? 'Moving' : 'Stopped'),
                         icon: Icons.circle,
-                        color: _busSpeed > 0 ? Colors.green : Colors.orange,
+                        color: !_isLive
+                            ? Colors.grey
+                            : (_busSpeed > 1 ? Colors.green : Colors.orange),
                       ),
                     ],
                   ),
