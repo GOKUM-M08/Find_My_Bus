@@ -1,0 +1,52 @@
+<!--
+  NOTE: this file wasn't provided in full by the guide — STEP 5.2 only
+  gives the four <uses-permission> lines to add "inside <manifest>" of
+  an existing project. Since `flutter create` was never run here, this
+  is a standard Flutter AndroidManifest.xml with those permissions
+  (plus INTERNET, needed for any network calls) already included, so
+  the folder structure is complete and buildable after `flutter create .`
+  is run in flutter_app/ to fill in the rest of the native scaffolding.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- STEP 5.2 — required for Driver Mode (phone as GPS tracker) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+        <application
+        android:label="bustrack"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+
+        <!-- Required for google_maps_flutter — without this the app
+             crashes the moment a GoogleMap widget tries to render
+             (e.g. opening the Tracking Screen). -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDaTPBXsHG95vazfTUSTW0GRZPDf_lUghE"/>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>

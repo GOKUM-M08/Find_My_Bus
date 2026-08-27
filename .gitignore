@@ -1,0 +1,23 @@
+# Backend
+backend/.env
+backend/firebase_service_account.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Flutter
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/build/
+flutter_app/android/local.properties
+flutter_app/android/app/google-services.json
+flutter_app/**/*.iml
+
+# Admin panel (React)
+admin_panel/node_modules/
+admin_panel/build/
+
+# OS
+.DS_Store
