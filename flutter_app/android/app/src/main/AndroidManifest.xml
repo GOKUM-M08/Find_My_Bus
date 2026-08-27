@@ -16,17 +16,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
 
-        <application
+                <application
         android:label="Find My Bus"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-
-        <!-- Required for google_maps_flutter — without this the app
-             crashes the moment a GoogleMap widget tries to render
-             (e.g. opening the Tracking Screen). -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyDaTPBXsHG95vazfTUSTW0GRZPDf_lUghE"/>
 
         <activity
             android:name=".MainActivity"

@@ -8,7 +8,8 @@ dependencies:
   flutter:
     sdk: flutter
   supabase_flutter: ^2.3.4
-  google_maps_flutter: ^2.5.3
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   firebase_core: ^2.27.1
   firebase_messaging: ^14.7.19
   geolocator: ^11.0.0
