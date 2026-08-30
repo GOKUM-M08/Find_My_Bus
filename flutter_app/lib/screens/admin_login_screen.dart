@@ -39,6 +39,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
    
     setState(() => _loading = true);
+    try {
 
     // Fetch all schools and match client-side (trimmed, case-insensitive)
     // instead of relying on an exact database-side match — this is more
@@ -54,8 +55,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         break;
       }
     }
-
-    setState(() => _loading = false);
 
     if (school == null) {
       if (!mounted) return;
@@ -80,6 +79,21 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         ),
       ),
     );
+    } on PostgrestException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not access schools: ${error.message}')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not connect to the server. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
