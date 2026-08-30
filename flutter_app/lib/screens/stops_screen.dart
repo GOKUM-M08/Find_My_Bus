@@ -223,9 +223,23 @@ class _StopsScreenState extends State<StopsScreen> {
                       child: ListView.builder(
                         padding: const EdgeInsets.symmetric(
                             vertical: 12, horizontal: 16),
-                        itemCount: _stops.length,
-                        itemBuilder: (context, index) =>
-                            _buildStopRow(index),
+                        itemCount: _stops.length + 1,
+                        itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: Text(
+                                '${_stops.length} stops on this route.',
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }
+                          return _buildStopRow(index - 1);
+                        },
                       ),
                     ),
                     _buildBottomButton(),

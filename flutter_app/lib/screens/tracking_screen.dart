@@ -5,10 +5,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'stops_screen.dart';
 
-// TODO: replace with your deployed backend URL (see STEP 6 — Deployment)
-const String kBackendBaseUrl = 'http://192.168.1.5:8000';
-
+import 'config.dart';
 class TrackingScreen extends StatefulWidget {
   final String busId;
   final String busNumber;
@@ -89,6 +88,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
     if (!mounted) return;
     setState(() {
       _isLive = live;
+      _updateBusMarker();
       if (!live && widget.stopId != null) {
         _eta = "Bus offline";
       }
@@ -197,14 +197,41 @@ class _TrackingScreenState extends State<TrackingScreen> {
   void _updateBusMarker() {
     _busMarker = Marker(
       point: _currentBusLocation,
-      width: 44,
-      height: 44,
+      width: 58,
+      height: 58,
       child: GestureDetector(
         onTap: () => _showStopInfo(
           'Bus ${widget.busNumber}',
           '${_busSpeed.toStringAsFixed(0)} km/h',
         ),
-        child: const Icon(Icons.directions_bus, color: Colors.green, size: 38),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (_isLive)
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.16),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)],
+              ),
+              child: Icon(
+                Icons.directions_bus,
+                color: _isLive ? Colors.green : Colors.grey,
+                size: 32,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -253,7 +280,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
               initialZoom: 15,
             ),
             children: [
-              TileLayer(
+                            TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.bustrack',
               ),
@@ -274,6 +301,21 @@ class _TrackingScreenState extends State<TrackingScreen> {
               ),
             ],
           ),
+          if (!_isLive)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.amber.shade100,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  "This bus hasn't sent an update recently.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.amber.shade900, fontSize: 13),
+                ),
+              ),
+            ),
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(
@@ -304,6 +346,18 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         label: 'ETA',
                         value: _eta,
                         icon: Icons.access_time,
+                        onTap: widget.stopId == null
+                            ? () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => StopsScreen(
+                                      busId: widget.busId,
+                                      busNumber: widget.busNumber,
+                                      schoolName: '',
+                                    ),
+                                  ),
+                                )
+                            : null,
                       ),
                       _InfoTile(
                         label: 'Status',
@@ -332,26 +386,35 @@ class _InfoTile extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
   const _InfoTile({
     required this.label,
     required this.value,
     required this.icon,
     this.color = const Color(0xFF1E6BFF),
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(value,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 16)),
-        Text(label,
-            style: const TextStyle(color: Colors.grey, fontSize: 12)),
-      ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 4),
+            Text(value,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(label,
+                style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          ],
+        ),
+      ),
     );
   }
 }

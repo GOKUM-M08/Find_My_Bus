@@ -25,6 +25,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
   List<Map<String, dynamic>> _suggestions = [];
   List<Map<String, dynamic>> _browseBuses = [];
+  Set<String> _liveBusIds = {};
   bool _searching = false;
   bool _loadingBrowse = true;
 
@@ -51,10 +52,35 @@ class _FindBusScreenState extends State<FindBusScreen> {
         .order('bus_number')
         .limit(20);
 
+    final liveBusIds = await _loadLiveBusIds(result);
+    if (!mounted) return;
     setState(() {
       _browseBuses = List<Map<String, dynamic>>.from(result);
+      _liveBusIds = liveBusIds;
       _loadingBrowse = false;
     });
+  }
+
+  Future<Set<String>> _loadLiveBusIds(List<dynamic> buses) async {
+    final busIds = buses
+        .map((bus) => bus['id']?.toString())
+        .whereType<String>()
+        .toList();
+    if (busIds.isEmpty) return {};
+
+    final locations = await supabase
+        .from('live_location')
+        .select('bus_id, timestamp')
+        .inFilter('bus_id', busIds);
+    final now = DateTime.now().toUtc();
+    return locations
+        .where((location) {
+          final timestamp = location['timestamp'];
+          if (timestamp == null) return false;
+          return now.difference(DateTime.parse(timestamp).toUtc()).inSeconds < 60;
+        })
+        .map((location) => location['bus_id'].toString())
+        .toSet();
   }
 
   void _onSearchChanged(String query) {
@@ -91,9 +117,11 @@ class _FindBusScreenState extends State<FindBusScreen> {
       for (final s in schoolResults) {...s, 'type': 'school'},
     ];
 
+    final liveBusIds = await _loadLiveBusIds(busResults);
     if (!mounted) return;
     setState(() {
       _suggestions = combined;
+      _liveBusIds = liveBusIds;
       _searching = false;
     });
   }
@@ -105,6 +133,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
         .eq('school_id', schoolId)
         .order('bus_number');
 
+    final liveBusIds = await _loadLiveBusIds(result);
     if (!mounted) return;
 
     if (result.isEmpty) {
@@ -118,6 +147,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
       _suggestions = [
         for (final b in result) {...b, 'type': 'bus'},
       ];
+      _liveBusIds = liveBusIds;
     });
   }
 
@@ -194,6 +224,18 @@ class _FindBusScreenState extends State<FindBusScreen> {
             ),
           ),
 
+          if (!showingSuggestions)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 10, 20, 2),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Search your bus number or school to see it live.',
+                  style: TextStyle(fontSize: 13, color: Colors.blueGrey),
+                ),
+              ),
+            ),
+
           Expanded(
             child: showingSuggestions
                 ? _buildSuggestionsList()
@@ -247,7 +289,9 @@ class _FindBusScreenState extends State<FindBusScreen> {
                 ? 'School — tap to see its buses'
                 : (item['schools']?['name'] ?? ''),
           ),
-          trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+          trailing: isSchool
+              ? const Icon(Icons.chevron_right, color: Colors.grey)
+              : _BusListTrailing(isLive: _liveBusIds.contains(item['id'])),
           onTap: () {
             if (isSchool) {
               _openBusesForSchool(item['id'], item['name']);
@@ -296,7 +340,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: Text(bus['schools']?['name'] ?? ''),
-            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+            trailing: _BusListTrailing(isLive: _liveBusIds.contains(bus['id'])),
             onTap: () => _openBus(bus),
           ),
       ],
@@ -309,9 +353,9 @@ class _FindBusScreenState extends State<FindBusScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: PRIMARY_BLUE.withOpacity(0.1),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
+            color: Colors.black.withOpacity(0.14),
+            blurRadius: 14,
+            offset: const Offset(0, -3),
           ),
         ],
       ),
@@ -389,7 +433,8 @@ class _FindBusScreenState extends State<FindBusScreen> {
           ),
 
           // 📞 SUPPORT SECTION
-          Container(
+          const SizedBox.shrink(),
+          /*Container(
             padding: const EdgeInsets.all(16),
             margin: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -462,7 +507,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
                 ),
               ],
             ),
-          ),
+          ),*/
 
           const SizedBox(height: 8),
           const Padding(
@@ -481,12 +526,12 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
           // 🎨 Theme & Settings
           _DrawerItem(
-            icon: Icons.palette_outlined,
-            label: 'Theme & Settings',
+            icon: Icons.person_outline,
+            label: 'My Profile',
             onTap: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Theme Settings - Coming Soon')),
+                const SnackBar(content: Text('Profile - Coming Soon')),
               );
             },
           ),
@@ -505,30 +550,6 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
           // 👤 Profile
           _DrawerItem(
-            icon: Icons.person_outline,
-            label: 'My Profile',
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Profile - Coming Soon')),
-              );
-            },
-          ),
-
-          // ⭐ Rate Us
-          _DrawerItem(
-            icon: Icons.star_border,
-            label: 'Rate us',
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Opening App Store...')),
-              );
-            },
-          ),
-
-          // ❓ FAQ
-          _DrawerItem(
             icon: Icons.help_outline,
             label: 'FAQ & Help',
             onTap: () {
@@ -539,7 +560,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
             },
           ),
 
-          // 💡 Suggest Feature
+          // ⭐ Rate Us
           _DrawerItem(
             icon: Icons.lightbulb_outline,
             label: 'Suggest a Feature',
@@ -551,7 +572,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
             },
           ),
 
-          // 📋 About
+          // ❓ FAQ
           _DrawerItem(
             icon: Icons.info_outline,
             label: 'About Find My Bus',
@@ -563,7 +584,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
             },
           ),
 
-          // 📤 Share App
+          // 💡 Suggest Feature
           _DrawerItem(
             icon: Icons.share_outlined,
             label: 'Share App',
@@ -575,7 +596,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
             },
           ),
 
-          // 🔒 Privacy Policy
+          // 📋 About
           _DrawerItem(
             icon: Icons.security_outlined,
             label: 'Privacy Policy',
@@ -587,6 +608,19 @@ class _FindBusScreenState extends State<FindBusScreen> {
             },
           ),
 
+          // 📤 Share App
+          _DrawerItem(
+            icon: Icons.palette_outlined,
+            label: 'Theme & Settings',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Theme Settings - Coming Soon')),
+              );
+            },
+          ),
+
+          // 🔒 Privacy Policy
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Divider(),
@@ -607,6 +641,59 @@ class _FindBusScreenState extends State<FindBusScreen> {
               );
             },
           ),
+          _buildSupportCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSupportCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+      decoration: BoxDecoration(
+        color: LIGHT_BLUE,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: PRIMARY_BLUE, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Support',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: PRIMARY_BLUE)),
+          const SizedBox(height: 10),
+          Row(children: [
+            const Icon(Icons.phone, color: PRIMARY_BLUE, size: 16),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Call: +91 6369669753')),
+              ),
+              child: const Text('+91 6369669753',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: PRIMARY_BLUE,
+                      decoration: TextDecoration.underline)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            const Icon(Icons.email, color: PRIMARY_BLUE, size: 16),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Email: gokulm4a1@gmail.com')),
+              ),
+              child: const Text('gokulm4a1@gmail.com',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: PRIMARY_BLUE,
+                      decoration: TextDecoration.underline)),
+            ),
+          ]),
         ],
       ),
     );
@@ -638,6 +725,31 @@ class _DrawerItem extends StatelessWidget {
   }
 }
 
+class _BusListTrailing extends StatelessWidget {
+  final bool isLive;
+
+  const _BusListTrailing({required this.isLive});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+            color: isLive ? Colors.green : Colors.grey.shade400,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 10),
+        const Icon(Icons.chevron_right, color: Colors.grey),
+      ],
+    );
+  }
+}
+
 class _BottomBarButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -658,7 +770,7 @@ class _BottomBarButton extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: PRIMARY_BLUE, size: 22),
+            Icon(icon, color: PRIMARY_BLUE, size: 26),
             const SizedBox(height: 4),
             Text(
               label,

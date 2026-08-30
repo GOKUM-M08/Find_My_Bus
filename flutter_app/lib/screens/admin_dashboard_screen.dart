@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'route_optimizer_screen.dart';
 
 // Speed threshold above which a bus is flagged as overspeeding.
 const double kOverspeedThresholdKmh = 60;
@@ -173,6 +174,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Route Optimizer',
+            icon: const Icon(Icons.route_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => RouteOptimizerScreen(
+                schoolId: widget.schoolId,
+                schoolName: widget.schoolName,
+              ),
+            )),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => _loadBuses(),

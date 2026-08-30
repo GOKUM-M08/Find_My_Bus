@@ -1,6 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routes import buses, tracking, students, schools
+from routes import buses, tracking, students, schools, route_optimizer
 import asyncio
 import json
 
@@ -19,6 +19,7 @@ app.include_router(buses.router, prefix="/api/buses", tags=["Buses"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(students.router, prefix="/api/students", tags=["Students"])
 app.include_router(schools.router, prefix="/api/schools", tags=["Schools"])
+app.include_router(route_optimizer.router, tags=["Route Optimizer"])
 
 # Store active WebSocket connections
 # Key: bus_id → List of connected parent WebSockets

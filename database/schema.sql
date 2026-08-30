@@ -18,6 +18,9 @@ create table buses (
   driver_phone text,
   device_id text unique,        -- GPS tracker device serial number
   capacity integer default 40,
+  mileage_kmpl double precision,
+  condition_score double precision default 1.0 check (condition_score between 0 and 1),
+  diesel_price_per_l double precision,
   is_active boolean default true,
   created_at timestamp default now()
 );
@@ -28,6 +31,9 @@ create table routes (
   bus_id uuid references buses(id),
   school_id uuid references schools(id),
   route_name text not null,
+  distance_km double precision,
+  student_count integer,
+  traffic_index double precision default 1.0 check (traffic_index > 0),
   is_active boolean default true,
   created_at timestamp default now()
 );
