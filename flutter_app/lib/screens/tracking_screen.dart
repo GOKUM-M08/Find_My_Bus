@@ -1,13 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'stops_screen.dart';
+import 'package:latlong2/latlong.dart' hide Path;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+
+// Palette matching home_screen.dart & main.dart
+const Color PRIMARY_BLUE = Color(0xFF0052CC);
+const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
+const Color LIGHT_BLUE = Color(0xFFE8F0FE);
+const Color BACKGROUND_BLUE = Color(0xFFF7F9FC);
+
 class TrackingScreen extends StatefulWidget {
   final String busId;
   final String busNumber;
@@ -24,18 +30,15 @@ class TrackingScreen extends StatefulWidget {
   State<TrackingScreen> createState() => _TrackingScreenState();
 }
 
-class _TrackingScreenState extends State<TrackingScreen> {
+class _TrackingScreenState extends State<TrackingScreen>
+    with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   Marker? _busMarker;
   List<LatLng> _routePoints = [];
   List<Marker> _stopMarkers = [];
+  List<Map<String, dynamic>> _rawStops = [];
+  String _routeName = '';
 
-  // Supabase Realtime subscription — replaces the old custom WebSocket.
-  // The WebSocket only fired when gps_listener.py explicitly called the
-  // backend's /internal/broadcast endpoint, which Driver Mode (writing
-  // straight to Supabase from the phone) never does — so the map only
-  // ever updated once, on load. Subscribing directly to database
-  // changes works no matter which path wrote the update.
   StreamSubscription? _liveLocationSub;
 
   LatLng _currentBusLocation = const LatLng(13.0827, 80.2707);
@@ -123,51 +126,127 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
     if (routes != null && routes['stops'] != null) {
       List<LatLng> routePoints = [];
-      List<Marker> stopMarkers = [];
 
-      final stops = routes['stops'] as List;
-      stops.sort((a, b) => a['stop_order'].compareTo(b['stop_order']));
+      final stops = List<Map<String, dynamic>>.from(routes['stops']);
+      stops.sort((a, b) => (a['stop_order'] as int).compareTo(b['stop_order'] as int));
+      _rawStops = stops;
+      _routeName = routes['route_name'] ?? 'School Route';
 
       for (var stop in stops) {
         LatLng pos = LatLng(stop['latitude'], stop['longitude']);
         routePoints.add(pos);
-
-        stopMarkers.add(Marker(
-          point: pos,
-          width: 36,
-          height: 36,
-          child: GestureDetector(
-            onTap: () => _showStopInfo(
-              stop['stop_name'] ?? 'Stop',
-              stop['expected_time'] ?? '',
-            ),
-            child: const Icon(Icons.location_pin,
-                color: Colors.blueAccent, size: 32),
-          ),
-        ));
       }
 
       setState(() {
         _routePoints = routePoints;
-        _stopMarkers = stopMarkers;
+        _rebuildStopMarkers();
+        _updateBusMarker();
       });
     }
   }
 
-  void _showStopInfo(String title, String subtitle) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(subtitle.isEmpty ? title : '$title — $subtitle'),
-        duration: const Duration(seconds: 2),
+  void _rebuildStopMarkers() {
+    if (_rawStops.isEmpty) return;
+
+    List<Marker> stopMarkers = [];
+    for (int i = 0; i < _rawStops.length; i++) {
+      final stop = _rawStops[i];
+      final pos = LatLng(stop['latitude'], stop['longitude']);
+      final isTargetStop = widget.stopId != null && stop['id'].toString() == widget.stopId;
+      final stopNumber = i + 1;
+
+      stopMarkers.add(
+        Marker(
+          point: pos,
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          child: GestureDetector(
+            onTap: () => _showStopDetailsSheet(stop, stopNumber, isTargetStop),
+            child: _StopNodeMarker(
+              stopNumber: stopNumber,
+              stopName: stop['stop_name'] ?? 'Stop #$stopNumber',
+              isTarget: isTargetStop,
+            ),
+          ),
+        ),
+      );
+    }
+
+    setState(() {
+      _stopMarkers = stopMarkers;
+    });
+  }
+
+  void _showStopDetailsSheet(Map<String, dynamic> stop, int stopOrder, bool isTarget) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: isTarget ? Colors.red.shade50 : LIGHT_BLUE,
+                    child: Icon(
+                      isTarget ? Icons.star_rounded : Icons.directions_bus_rounded,
+                      color: isTarget ? Colors.red.shade600 : PRIMARY_BLUE,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          stop['stop_name'] ?? 'Stop #$stopOrder',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Stop Order #$stopOrder • Scheduled: ${stop['expected_time'] ?? 'N/A'}',
+                          style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (!isTarget)
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PRIMARY_BLUE,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _fetchETA(stop['id'].toString());
+                    },
+                    icon: const Icon(Icons.timer_outlined, size: 18),
+                    label: const Text('Track Live ETA for this Stop'),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   void _subscribeToLiveLocation() {
-    // Supabase Realtime: fires automatically on every INSERT/UPDATE to
-    // live_location for this bus_id — whether that write came from
-    // Driver Mode, the simulator, or real GPS hardware via
-    // gps_listener.py. No backend relay needed.
     _liveLocationSub = supabase
         .from('live_location')
         .stream(primaryKey: ['id'])
@@ -195,43 +274,40 @@ class _TrackingScreenState extends State<TrackingScreen> {
   }
 
   void _updateBusMarker() {
+    final isMoving = _isLive && _busSpeed > 1;
+    final statusText = !_isLive
+        ? 'Offline • Waiting for update'
+        : (isMoving ? 'Moving • ${_busSpeed.toStringAsFixed(0)} km/h' : 'Stopped at location');
+    final statusColor = !_isLive
+        ? Colors.grey.shade700
+        : (isMoving ? const Color(0xFF10B981) : const Color(0xFFF59E0B));
+
     _busMarker = Marker(
       point: _currentBusLocation,
-      width: 58,
-      height: 58,
-      child: GestureDetector(
-        onTap: () => _showStopInfo(
-          'Bus ${widget.busNumber}',
-          '${_busSpeed.toStringAsFixed(0)} km/h',
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (_isLive)
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.16),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)],
-              ),
-              child: Icon(
-                Icons.directions_bus,
-                color: _isLive ? Colors.green : Colors.grey,
-                size: 32,
-              ),
+      width: 240,
+      height: 120,
+      alignment: Alignment.bottomCenter,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          // Speech Bubble Callout Card above Vehicle
+          _BusCalloutCard(
+            busNumber: widget.busNumber,
+            routeName: _routeName.isNotEmpty ? _routeName : 'School Route',
+            statusText: statusText,
+            statusColor: statusColor,
+          ),
+
+          // Vehicle Pin Avatar at bottom of callout
+          Positioned(
+            bottom: 0,
+            child: _BusVehicleAvatar(
+              isLive: _isLive,
+              isMoving: isMoving,
+              statusColor: statusColor,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -266,110 +342,178 @@ class _TrackingScreenState extends State<TrackingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Bus ${widget.busNumber}'),
-        backgroundColor: const Color(0xFF1E6BFF),
-        foregroundColor: Colors.white,
-      ),
       body: Stack(
         children: [
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _currentBusLocation,
-              initialZoom: 15,
+              initialZoom: 14,
             ),
             children: [
-                            TileLayer(
+              TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.bustrack',
               ),
               PolylineLayer(
                 polylines: [
+                  // Outer border stroke
                   Polyline(
                     points: _routePoints,
-                    color: const Color(0xFF1E6BFF),
-                    strokeWidth: 4,
+                    color: const Color(0xFF003D99).withOpacity(0.3),
+                    strokeWidth: 8,
+                  ),
+                  // Inner route line matching screenshot
+                  Polyline(
+                    points: _routePoints,
+                    color: SECONDARY_BLUE,
+                    strokeWidth: 5,
                   ),
                 ],
               ),
               MarkerLayer(
                 markers: [
-                  if (_busMarker != null) _busMarker!,
                   ..._stopMarkers,
+                  if (_busMarker != null) _busMarker!,
                 ],
               ),
             ],
           ),
-          if (!_isLive)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
+
+          // Top Left Floating Back/Close Circular Button (matching screenshot (X))
+          Positioned(
+            top: 40,
+            left: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
               child: Container(
-                color: Colors.amber.shade100,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(
-                  "This bus hasn't sent an update recently.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.amber.shade900, fontSize: 13),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.55),
+                  shape: BoxShape.circle,
+                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
                 ),
+                child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
               ),
             ),
+          ),
+
+          // Floating Map Camera Controls
           Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black12)],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _InfoTile(
-                        label: 'Speed',
-                        value: '${_busSpeed.toStringAsFixed(0)} km/h',
-                        icon: Icons.speed,
-                      ),
-                      if (widget.stopId != null)
-                        _InfoTile(
-                          label: 'Stops Away',
-                          value: '$_stopsAway stops',
-                          icon: Icons.place,
+            right: 14,
+            top: 40,
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'recenter_bus',
+                  backgroundColor: Colors.white,
+                  foregroundColor: PRIMARY_BLUE,
+                  elevation: 4,
+                  onPressed: () {
+                    _mapController.move(_currentBusLocation, 15.5);
+                  },
+                  child: const Icon(Icons.my_location_rounded, size: 20),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'fit_bounds',
+                  backgroundColor: Colors.white,
+                  foregroundColor: PRIMARY_BLUE,
+                  elevation: 4,
+                  onPressed: () {
+                    if (_routePoints.isNotEmpty) {
+                      _mapController.fitCamera(
+                        CameraFit.bounds(
+                          bounds: LatLngBounds.fromPoints([_currentBusLocation, ..._routePoints]),
+                          padding: const EdgeInsets.all(50),
                         ),
-                      _InfoTile(
-                        label: 'ETA',
-                        value: _eta,
-                        icon: Icons.access_time,
-                        onTap: widget.stopId == null
-                            ? () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => StopsScreen(
-                                      busId: widget.busId,
-                                      busNumber: widget.busNumber,
-                                      schoolName: '',
-                                    ),
-                                  ),
-                                )
-                            : null,
+                      );
+                    }
+                  },
+                  child: const Icon(Icons.zoom_out_map_rounded, size: 20),
+                ),
+              ],
+            ),
+          ),
+
+          // Bottom Template Status Bar (matching screenshot layout)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 16, 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          !_isLive
+                              ? 'Bus Offline • Waiting for update'
+                              : (_busSpeed > 1
+                                  ? 'Moving at ${_busSpeed.toStringAsFixed(0)} km/h'
+                                  : 'Stopped at location'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          widget.stopId != null ? 'ETA: $_eta • $_stopsAway stops away' : 'Updated few seconds ago',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Floating Circular Refresh Action Button (matching bottom right blue circle button in screenshot)
+                  GestureDetector(
+                    onTap: () {
+                      _checkLiveStatus();
+                      if (widget.stopId != null) _fetchETA(widget.stopId!);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Refreshing live location...'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: const BoxDecoration(
+                        color: PRIMARY_BLUE,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      _InfoTile(
-                        label: 'Status',
-                        value: !_isLive
-                            ? 'Offline'
-                            : (_busSpeed > 1 ? 'Moving' : 'Stopped'),
-                        icon: Icons.circle,
-                        color: !_isLive
-                            ? Colors.grey
-                            : (_busSpeed > 1 ? Colors.green : Colors.orange),
-                      ),
-                    ],
+                      child: const Icon(Icons.refresh_rounded, color: Colors.white, size: 24),
+                    ),
                   ),
                 ],
               ),
@@ -381,38 +525,212 @@ class _TrackingScreenState extends State<TrackingScreen> {
   }
 }
 
-class _InfoTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final VoidCallback? onTap;
+// 💬 Floating Speech Bubble Callout Card above Bus Pin (matching template screenshot)
+class _BusCalloutCard extends StatelessWidget {
+  final String busNumber;
+  final String routeName;
+  final String statusText;
+  final Color statusColor;
 
-  const _InfoTile({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.color = const Color(0xFF1E6BFF),
-    this.onTap,
+  const _BusCalloutCard({
+    required this.busNumber,
+    required this.routeName,
+    required this.statusText,
+    required this.statusColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(value,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Bus $busNumber: $routeName',
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16)),
-            Text(label,
-                style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          ],
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                statusText,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: statusColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Speech Bubble Pointer Arrow Tip pointing down
+        CustomPaint(
+          size: const Size(12, 6),
+          painter: _TrianglePointerPainter(color: Colors.white),
+        ),
+      ],
+    );
+  }
+}
+
+class _TrianglePointerPainter extends CustomPainter {
+  final Color color;
+  _TrianglePointerPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _BusVehicleAvatar extends StatefulWidget {
+  final bool isLive;
+  final bool isMoving;
+  final Color statusColor;
+
+  const _BusVehicleAvatar({
+    required this.isLive,
+    required this.isMoving,
+    required this.statusColor,
+  });
+
+  @override
+  State<_BusVehicleAvatar> createState() => _BusVehicleAvatarState();
+}
+
+class _BusVehicleAvatarState extends State<_BusVehicleAvatar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        if (widget.isLive)
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, _) {
+              final scale = 1.0 + (_pulseController.value * 0.4);
+              final opacity = (1.0 - _pulseController.value).clamp(0.0, 1.0);
+              return Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.statusColor.withOpacity(opacity * 0.35),
+                  ),
+                ),
+              );
+            },
+          ),
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: PRIMARY_BLUE,
+            border: Border.all(color: Colors.white, width: 2.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.directions_bus_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StopNodeMarker extends StatelessWidget {
+  final int stopNumber;
+  final String stopName;
+  final bool isTarget;
+
+  const _StopNodeMarker({
+    required this.stopNumber,
+    required this.stopName,
+    required this.isTarget,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isTarget ? const Color(0xFFDC2626) : PRIMARY_BLUE,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Icon(
+          isTarget ? Icons.star_rounded : Icons.directions_bus_rounded,
+          color: Colors.white,
+          size: 14,
         ),
       ),
     );

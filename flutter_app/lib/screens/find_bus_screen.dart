@@ -4,6 +4,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 import 'stops_screen.dart';
 import 'admin_login_screen.dart';
+import 'profile_screen.dart';
+import 'faq_screen.dart';
+import 'suggest_feature_screen.dart';
+import 'about_screen.dart';
+import 'privacy_screen.dart';
+import 'settings_screen.dart';
+import '../services/language_service.dart';
 
 // Colors from main.dart
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -20,6 +27,7 @@ class FindBusScreen extends StatefulWidget {
 
 class _FindBusScreenState extends State<FindBusScreen> {
   final supabase = Supabase.instance.client;
+  final languageService = LanguageService();
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
 
@@ -42,9 +50,6 @@ class _FindBusScreenState extends State<FindBusScreen> {
     super.dispose();
   }
 
-  /// Shown before the parent types anything — a simple browsable list
-  /// of buses, standing in for "recent searches" since there's no
-  /// logged-in user to remember a history for.
   Future<void> _loadBrowseBuses() async {
     final result = await supabase
         .from('buses')
@@ -89,7 +94,6 @@ class _FindBusScreenState extends State<FindBusScreen> {
       setState(() => _suggestions = []);
       return;
     }
-    // Small debounce so we're not firing a query on every keystroke.
     _debounce = Timer(const Duration(milliseconds: 300), () {
       _runSearch(query.trim());
     });
@@ -98,8 +102,6 @@ class _FindBusScreenState extends State<FindBusScreen> {
   Future<void> _runSearch(String query) async {
     setState(() => _searching = true);
 
-    // Search buses by number/code, and schools by name, in parallel —
-    // combined into one suggestion list like WIMT mixes stations/trains.
     final busResults = await supabase
         .from('buses')
         .select('id, bus_number, bus_code, schools(name)')
@@ -166,98 +168,112 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final showingSuggestions = _searchController.text.trim().isNotEmpty;
+    return ListenableBuilder(
+      listenable: languageService,
+      builder: (context, _) {
+        final showingSuggestions = _searchController.text.trim().isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: BACKGROUND_BLUE,
-      drawer: _buildDrawer(),
-      appBar: AppBar(
-        backgroundColor: PRIMARY_BLUE,
-        foregroundColor: Colors.white,
-        elevation: 8,
-        title: const Text(
-          'Find My Bus',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Search bar
-          Container(
-            color: PRIMARY_BLUE,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: PRIMARY_BLUE.withOpacity(0.15),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ],
+        return Scaffold(
+          backgroundColor: BACKGROUND_BLUE,
+          drawer: _buildDrawer(),
+          appBar: AppBar(
+            backgroundColor: PRIMARY_BLUE,
+            foregroundColor: Colors.white,
+            elevation: 8,
+            title: Text(
+              languageService.getText('app_title'),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+            ),
+            actions: [
+              IconButton(
+                tooltip: languageService.getText('language'),
+                icon: const Icon(Icons.language_rounded),
+                onPressed: _showLanguageDialog,
               ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'Bus No., school or college',
-                  prefixIcon: const Icon(Icons.search, color: PRIMARY_BLUE),
-                  suffixIcon: _searching
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE)),
-                          ),
-                        )
-                      : null,
-                  border: OutlineInputBorder(
+            ],
+          ),
+          body: Column(
+            children: [
+              // Search bar
+              Container(
+                color: PRIMARY_BLUE,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    boxShadow: [
+                      BoxShadow(
+                        color: PRIMARY_BLUE.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      )
+                    ],
                   ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      hintText: languageService.getText('search_hint'),
+                      prefixIcon: const Icon(Icons.search, color: PRIMARY_BLUE),
+                      suffixIcon: _searching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE),
+                                ),
+                              ),
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
 
-          if (!showingSuggestions)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 10, 20, 2),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Search your bus number or school to see it live.',
-                  style: TextStyle(fontSize: 13, color: Colors.blueGrey),
+              if (!showingSuggestions)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 2),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      languageService.getText('search_subtext'),
+                      style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
+                    ),
+                  ),
                 ),
+
+              Expanded(
+                child: showingSuggestions
+                    ? _buildSuggestionsList()
+                    : _buildBrowseList(),
               ),
-            ),
 
-          Expanded(
-            child: showingSuggestions
-                ? _buildSuggestionsList()
-                : _buildBrowseList(),
+              _buildBottomBar(),
+            ],
           ),
-
-          // Bottom bar: Register Student | Driver Login
-          _buildBottomBar(),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildSuggestionsList() {
     if (_suggestions.isEmpty && !_searching) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32),
           child: Text(
-            'No buses or schools matched that search.',
+            languageService.getText('no_search_results'),
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
+            style: const TextStyle(color: Colors.grey),
           ),
         ),
       );
@@ -272,9 +288,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: isSchool
-                ? Colors.orange.shade50
-                : LIGHT_BLUE,
+            backgroundColor: isSchool ? Colors.orange.shade50 : LIGHT_BLUE,
             child: Icon(
               isSchool ? Icons.school : Icons.directions_bus,
               color: isSchool ? Colors.orange : PRIMARY_BLUE,
@@ -286,7 +300,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
           ),
           subtitle: Text(
             isSchool
-                ? 'School — tap to see its buses'
+                ? languageService.getText('tap_to_see_buses')
                 : (item['schools']?['name'] ?? ''),
           ),
           trailing: isSchool
@@ -306,22 +320,29 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
   Widget _buildBrowseList() {
     if (_loadingBrowse) {
-      return const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE)));
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE),
+        ),
+      );
     }
     if (_browseBuses.isEmpty) {
-      return const Center(
-        child: Text('No buses registered yet', style: TextStyle(color: Colors.grey)),
+      return Center(
+        child: Text(
+          languageService.getText('no_buses'),
+          style: const TextStyle(color: Colors.grey),
+        ),
       );
     }
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Text(
-            'BROWSE BUSES',
-            style: TextStyle(
+            languageService.getText('browse_buses'),
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
               color: Colors.grey,
@@ -363,10 +384,10 @@ class _FindBusScreenState extends State<FindBusScreen> {
         top: false,
         child: Row(
           children: [
-          Expanded(
+            Expanded(
               child: _BottomBarButton(
                 icon: Icons.admin_panel_settings_outlined,
-                label: 'Admin Login',
+                label: languageService.getText('admin_login'),
                 onTap: () {
                   Navigator.push(
                     context,
@@ -379,7 +400,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
             Expanded(
               child: _BottomBarButton(
                 icon: Icons.badge_outlined,
-                label: 'Driver Login',
+                label: languageService.getText('driver_login'),
                 onTap: () {
                   Navigator.push(
                     context,
@@ -412,17 +433,17 @@ class _FindBusScreenState extends State<FindBusScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Find My Bus',
-                    style: TextStyle(
+                  Text(
+                    languageService.getText('app_title'),
+                    style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 26,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Text(
-                    'Find My Bus - Easy Tracking',
-                    style: TextStyle(
+                  Text(
+                    languageService.getText('app_subtitle'),
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
                     ),
@@ -432,89 +453,12 @@ class _FindBusScreenState extends State<FindBusScreen> {
             ),
           ),
 
-          // 📞 SUPPORT SECTION
-          const SizedBox.shrink(),
-          /*Container(
-            padding: const EdgeInsets.all(16),
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: LIGHT_BLUE,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: PRIMARY_BLUE, width: 1.5),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '📞 Support',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: PRIMARY_BLUE,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.phone, color: PRIMARY_BLUE, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Open phone dialer
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Call: +91 6369669753')),
-                          );
-                        },
-                        child: const Text(
-                          '+91 6369669753',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: PRIMARY_BLUE,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.email, color: PRIMARY_BLUE, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Open email
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Email: gokulm4a1@gmail.com')),
-                          );
-                        },
-                        child: const Text(
-                          'gokulm4a1@gmail.com',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: PRIMARY_BLUE,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),*/
-
           const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              'MENU',
-              style: TextStyle(
+              languageService.getText('menu'),
+              style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey,
@@ -524,103 +468,105 @@ class _FindBusScreenState extends State<FindBusScreen> {
           ),
           const SizedBox(height: 8),
 
-          // 🎨 Theme & Settings
+          // 👤 My Profile
           _DrawerItem(
             icon: Icons.person_outline,
-            label: 'My Profile',
+            label: languageService.getText('my_profile'),
             onTap: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Profile - Coming Soon')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
               );
             },
           ),
 
-          // 🌐 Language
+          // 🌐 Language Selection (English & Tamil)
           _DrawerItem(
             icon: Icons.language,
-            label: 'Language',
+            label: languageService.getText('language'),
+            trailingText: languageService.isTamil ? 'தமிழ்' : 'English',
             onTap: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Language Settings - Coming Soon')),
-              );
+              _showLanguageDialog();
             },
           ),
 
-          // 👤 Profile
+          // ❓ FAQ & Help
           _DrawerItem(
             icon: Icons.help_outline,
-            label: 'FAQ & Help',
+            label: languageService.getText('faq_help'),
             onTap: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('FAQ - Coming Soon')),
-              );
-            },
-          ),
-
-          // ⭐ Rate Us
-          _DrawerItem(
-            icon: Icons.lightbulb_outline,
-            label: 'Suggest a Feature',
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Feature Request - Coming Soon')),
-              );
-            },
-          ),
-
-          // ❓ FAQ
-          _DrawerItem(
-            icon: Icons.info_outline,
-            label: 'About Find My Bus',
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('About - v1.0.0')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FAQScreen()),
               );
             },
           ),
 
           // 💡 Suggest Feature
           _DrawerItem(
-            icon: Icons.share_outlined,
-            label: 'Share App',
+            icon: Icons.lightbulb_outline,
+            label: languageService.getText('suggest_feature'),
             onTap: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Share - Coming Soon')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SuggestFeatureScreen()),
               );
             },
           ),
 
-          // 📋 About
+          // ℹ️ About
           _DrawerItem(
-            icon: Icons.security_outlined,
-            label: 'Privacy Policy',
+            icon: Icons.info_outline,
+            label: languageService.getText('about_app'),
             onTap: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Privacy Policy - Coming Soon')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AboutScreen()),
               );
             },
           ),
 
           // 📤 Share App
           _DrawerItem(
-            icon: Icons.palette_outlined,
-            label: 'Theme & Settings',
+            icon: Icons.share_outlined,
+            label: languageService.getText('share_app'),
             onTap: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Theme Settings - Coming Soon')),
-              );
+              _showShareAppDialog();
             },
           ),
 
           // 🔒 Privacy Policy
+          _DrawerItem(
+            icon: Icons.security_outlined,
+            label: languageService.getText('privacy_policy'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+              );
+            },
+          ),
+
+          // 🎨 Theme & Settings
+          _DrawerItem(
+            icon: Icons.palette_outlined,
+            label: languageService.getText('theme_settings'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+          ),
+
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Divider(),
@@ -629,9 +575,9 @@ class _FindBusScreenState extends State<FindBusScreen> {
           // Driver Login
           ListTile(
             leading: const Icon(Icons.badge_outlined, color: PRIMARY_BLUE),
-            title: const Text(
-              'Driver Login',
-              style: TextStyle(fontWeight: FontWeight.w600, color: PRIMARY_BLUE),
+            title: Text(
+              languageService.getText('driver_login'),
+              style: const TextStyle(fontWeight: FontWeight.w600, color: PRIMARY_BLUE),
             ),
             onTap: () {
               Navigator.pop(context);
@@ -641,6 +587,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
               );
             },
           ),
+
           _buildSupportCard(),
         ],
       ),
@@ -659,41 +606,175 @@ class _FindBusScreenState extends State<FindBusScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Support',
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: PRIMARY_BLUE)),
+          Text(
+            languageService.getText('support'),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: PRIMARY_BLUE,
+            ),
+          ),
           const SizedBox(height: 10),
-          Row(children: [
-            const Icon(Icons.phone, color: PRIMARY_BLUE, size: 16),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Call: +91 6369669753')),
-              ),
-              child: const Text('+91 6369669753',
+          Row(
+            children: [
+              const Icon(Icons.phone, color: PRIMARY_BLUE, size: 16),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Call: +91 6369669753')),
+                ),
+                child: const Text(
+                  '+91 6369669753',
                   style: TextStyle(
-                      fontSize: 12,
-                      color: PRIMARY_BLUE,
-                      decoration: TextDecoration.underline)),
-            ),
-          ]),
+                    fontSize: 12,
+                    color: PRIMARY_BLUE,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
-          Row(children: [
-            const Icon(Icons.email, color: PRIMARY_BLUE, size: 16),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Email: gokulm4a1@gmail.com')),
-              ),
-              child: const Text('gokulm4a1@gmail.com',
+          Row(
+            children: [
+              const Icon(Icons.email, color: PRIMARY_BLUE, size: 16),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Email: gokulm4a1@gmail.com')),
+                ),
+                child: const Text(
+                  'gokulm4a1@gmail.com',
                   style: TextStyle(
-                      fontSize: 12,
-                      color: PRIMARY_BLUE,
-                      decoration: TextDecoration.underline)),
+                    fontSize: 12,
+                    color: PRIMARY_BLUE,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🌐 LANGUAGE SELECTION DIALOG (English & Tamil)
+  void _showLanguageDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                const Icon(Icons.language_rounded, color: PRIMARY_BLUE),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    languageService.getText('select_language'),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
             ),
-          ]),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RadioListTile<String>(
+                  value: 'en',
+                  groupValue: languageService.currentLanguage,
+                  title: const Text('English', style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Default system language'),
+                  activeColor: PRIMARY_BLUE,
+                  onChanged: (val) {
+                    if (val != null) {
+                      languageService.setLanguage(val);
+                      setDialogState(() {});
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Language set to English')),
+                      );
+                    }
+                  },
+                ),
+                const Divider(),
+                RadioListTile<String>(
+                  value: 'ta',
+                  groupValue: languageService.currentLanguage,
+                  title: const Text('தமிழ் (Tamil)', style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('தமிழ் மொழி வடிவம்'),
+                  activeColor: PRIMARY_BLUE,
+                  onChanged: (val) {
+                    if (val != null) {
+                      languageService.setLanguage(val);
+                      setDialogState(() {});
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('மொழி தமிழில் மாற்றப்பட்டது (Language set to Tamil)')),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(languageService.getText('close')),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // 📤 SHARE APP DIALOG
+  void _showShareAppDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.share_outlined, color: PRIMARY_BLUE),
+            const SizedBox(width: 8),
+            Text(languageService.getText('share_app')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.qr_code_2_rounded, size: 80, color: PRIMARY_BLUE),
+            const SizedBox(height: 12),
+            Text(
+              languageService.isTamil
+                  ? 'பள்ளி மற்றும் பெற்றோருக்கு செயலியைப் பகிரவும்'
+                  : 'Share Find My Bus App link with parents & drivers',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 12),
+            SelectableText(
+              'https://trackbus.school/download',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: PRIMARY_BLUE, foregroundColor: Colors.white),
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Link'),
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('App link copied to clipboard!')),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -703,11 +784,13 @@ class _FindBusScreenState extends State<FindBusScreen> {
 class _DrawerItem extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String? trailingText;
   final VoidCallback onTap;
 
   const _DrawerItem({
     required this.icon,
     required this.label,
+    this.trailingText,
     required this.onTap,
   });
 
@@ -719,7 +802,20 @@ class _DrawerItem extends StatelessWidget {
         label,
         style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (trailingText != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Text(
+                trailingText!,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: PRIMARY_BLUE),
+              ),
+            ),
+          const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+        ],
+      ),
       onTap: onTap,
     );
   }
