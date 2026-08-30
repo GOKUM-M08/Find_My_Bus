@@ -3,6 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'tracking_screen.dart';
 import 'driver_screen.dart';
 
+// Professional Blue Color Palette
+const Color PRIMARY_BLUE = Color(0xFF0052CC);
+const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
+const Color LIGHT_BLUE = Color(0xFFE8F0FE);
+const Color BACKGROUND_BLUE = Color(0xFFF7F9FC);
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -92,11 +98,12 @@ class _ParentHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: BACKGROUND_BLUE,
       appBar: AppBar(
-        title: const Text('BusTrack', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1E6BFF),
+        title: const Text('Find My Bus', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: PRIMARY_BLUE,
         foregroundColor: Colors.white,
+        elevation: 8,
         actions: [
           IconButton(icon: const Icon(Icons.logout), onPressed: onLogout),
         ],
@@ -112,9 +119,16 @@ class _ParentHome extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF1E6BFF), Color(0xFF0EA5E9)],
+                  colors: [PRIMARY_BLUE, SECONDARY_BLUE],
                 ),
                 borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: PRIMARY_BLUE.withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  )
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,7 +195,11 @@ class _BusCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10)
+          BoxShadow(
+            color: PRIMARY_BLUE.withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          )
         ],
       ),
       child: Row(
@@ -189,11 +207,11 @@ class _BusCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
+              color: LIGHT_BLUE,
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.directions_bus,
-                color: Color(0xFF1E6BFF), size: 28),
+                color: PRIMARY_BLUE, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -210,13 +228,14 @@ class _BusCard extends StatelessWidget {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1E6BFF),
+              backgroundColor: PRIMARY_BLUE,
               foregroundColor: Colors.white,
+              elevation: 4,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: onTrack,
-            child: const Text('Track'),
+            child: const Text('Track', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -238,7 +257,7 @@ class _DriverHome extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
         foregroundColor: Colors.white,
-        title: const Text('BusTrack — Driver',
+        title: const Text('Find My Bus — Driver',
             style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(icon: const Icon(Icons.logout), onPressed: onLogout),

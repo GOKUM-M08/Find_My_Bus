@@ -71,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const Icon(Icons.directions_bus,
                   size: 64, color: Color(0xFF1E6BFF)),
               const SizedBox(height: 24),
-              const Text('BusTrack',
+              const Text('Find My Bus',
                   style: TextStyle(
                       fontSize: 32, fontWeight: FontWeight.bold)),
               const Text('Know where your child\'s bus is, always.',

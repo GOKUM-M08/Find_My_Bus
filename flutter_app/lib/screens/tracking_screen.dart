@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 // TODO: replace with your deployed backend URL (see STEP 6 — Deployment)
 const String kBackendBaseUrl = 'http://192.168.1.5:8000';
@@ -13,7 +12,6 @@ const String kBackendBaseUrl = 'http://192.168.1.5:8000';
 class TrackingScreen extends StatefulWidget {
   final String busId;
   final String busNumber;
-  // Optional: the parent's stop id, used to calculate ETA (STEP 11).
   final String? stopId;
 
   const TrackingScreen({
@@ -33,16 +31,20 @@ class _TrackingScreenState extends State<TrackingScreen> {
   List<LatLng> _routePoints = [];
   List<Marker> _stopMarkers = [];
 
-  WebSocketChannel? _wsChannel;
+  // Supabase Realtime subscription — replaces the old custom WebSocket.
+  // The WebSocket only fired when gps_listener.py explicitly called the
+  // backend's /internal/broadcast endpoint, which Driver Mode (writing
+  // straight to Supabase from the phone) never does — so the map only
+  // ever updated once, on load. Subscribing directly to database
+  // changes works no matter which path wrote the update.
+  StreamSubscription? _liveLocationSub;
+
   LatLng _currentBusLocation = const LatLng(13.0827, 80.2707);
   double _busSpeed = 0;
   String _eta = "Calculating...";
   int _stopsAway = 0;
   Timer? _etaTimer;
 
-  // Whether the bus has broadcast a GPS point recently. Without this,
-  // an old row in `live_location` makes the bus look "Moving" forever
-  // even after the GPS device has been off for hours.
   bool _isLive = false;
   Timer? _liveCheckTimer;
 
@@ -52,29 +54,23 @@ class _TrackingScreenState extends State<TrackingScreen> {
   void initState() {
     super.initState();
     _loadRoute();
-    _connectWebSocket();
+    _subscribeToLiveLocation();
     _loadInitialLocation();
     _checkLiveStatus();
     _liveCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _checkLiveStatus();
     });
 
-    // STEP 11.3 — fetch ETA once immediately, then refresh every 30 seconds.
     if (widget.stopId != null) {
       _fetchETA(widget.stopId!);
       _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _fetchETA(widget.stopId!);
       });
     } else {
-      // No specific stop selected (opened via the general "View on Map"
-      // button) — there's nothing to calculate ETA to, so say so instead
-      // of leaving the tile stuck on "Calculating..." forever.
       _eta = "Select a stop for ETA";
     }
   }
 
-  // Same freshness check used in stops_screen.dart: a bus is only
-  // considered live if it broadcast within the last 60 seconds.
   Future<void> _checkLiveStatus() async {
     final result = await supabase
         .from('live_location')
@@ -100,12 +96,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
   }
 
   Future<void> _loadInitialLocation() async {
-    // Get latest location from API
     final response = await supabase
         .from('live_location')
         .select()
         .eq('bus_id', widget.busId)
-        .single();
+        .maybeSingle();
 
     if (response != null) {
       setState(() {
@@ -120,12 +115,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
   }
 
   Future<void> _loadRoute() async {
-    // Load route stops from Supabase
     final routes = await supabase
         .from('routes')
         .select('*, stops(*)')
         .eq('bus_id', widget.busId)
-        .single();
+        .maybeSingle();
 
     if (routes != null && routes['stops'] != null) {
       List<LatLng> routePoints = [];
@@ -160,8 +154,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
-  // flutter_map has no built-in InfoWindow — tapping a marker shows this
-  // small snackbar instead (used for both the bus marker and stop pins).
   void _showStopInfo(String title, String subtitle) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -171,28 +163,31 @@ class _TrackingScreenState extends State<TrackingScreen> {
     );
   }
 
-  void _connectWebSocket() {
-    // Connect to your FastAPI WebSocket for real-time updates
-    _wsChannel = WebSocketChannel.connect(
-      Uri.parse('ws://192.168.1.5:8000/ws/track/${widget.busId}'),
-    );
+  void _subscribeToLiveLocation() {
+    // Supabase Realtime: fires automatically on every INSERT/UPDATE to
+    // live_location for this bus_id — whether that write came from
+    // Driver Mode, the simulator, or real GPS hardware via
+    // gps_listener.py. No backend relay needed.
+    _liveLocationSub = supabase
+        .from('live_location')
+        .stream(primaryKey: ['id'])
+        .eq('bus_id', widget.busId)
+        .listen((rows) {
+      if (rows.isEmpty) return;
+      final row = rows.first;
 
-    _wsChannel!.stream.listen((data) {
-      final parsed = json.decode(data);
-      if (parsed['type'] == 'ping') return;
+      if (row['latitude'] == null || row['longitude'] == null) return;
 
       setState(() {
         _currentBusLocation = LatLng(
-          parsed['latitude'],
-          parsed['longitude'],
+          (row['latitude'] as num).toDouble(),
+          (row['longitude'] as num).toDouble(),
         );
-        _busSpeed = parsed['speed']?.toDouble() ?? 0;
+        _busSpeed = (row['speed'] as num?)?.toDouble() ?? 0;
         _updateBusMarker();
-        // Move camera to follow bus
         _mapController.move(_currentBusLocation, _mapController.camera.zoom);
       });
 
-      // A fresh GPS point just came in — refresh ETA too.
       if (widget.stopId != null) {
         _fetchETA(widget.stopId!);
       }
@@ -214,7 +209,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
     );
   }
 
-  // STEP 11.3 — Show ETA in Flutter Tracking Screen
   Future<void> _fetchETA(String stopId) async {
     try {
       final response = await http.get(Uri.parse(
@@ -236,7 +230,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
   @override
   void dispose() {
-    _wsChannel?.sink.close();
+    _liveLocationSub?.cancel();
     _etaTimer?.cancel();
     _liveCheckTimer?.cancel();
     super.dispose();
@@ -261,8 +255,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                // TODO: set this to your real applicationId from
-                // android/app/build.gradle (OSM requires a valid user agent).
                 userAgentPackageName: 'com.example.bustrack',
               ),
               PolylineLayer(
@@ -282,8 +274,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
               ),
             ],
           ),
-
-          // Bottom info card
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(

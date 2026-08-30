@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'screens/find_bus_screen.dart';
+
+// Professional Blue Color Palette
+const Color PRIMARY_BLUE = Color(0xFF0052CC);
+const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
+const Color LIGHT_BLUE = Color(0xFFE8F0FE);
+const Color BACKGROUND_BLUE = Color(0xFFF7F9FC);
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -24,13 +30,19 @@ class BusTrackApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BusTrack',
+      title: 'Find My Bus',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E6BFF),
+          seedColor: PRIMARY_BLUE,
         ),
         useMaterial3: true,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: PRIMARY_BLUE,
+          foregroundColor: Colors.white,
+          elevation: 8,
+        ),
+        scaffoldBackgroundColor: BACKGROUND_BLUE,
       ),
       // Check if user is already logged in
             // Parents land here directly — no login required. Drivers

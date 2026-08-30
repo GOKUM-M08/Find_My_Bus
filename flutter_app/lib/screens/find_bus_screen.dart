@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 import 'stops_screen.dart';
+import 'admin_login_screen.dart';
+
+// Colors from main.dart
+const Color PRIMARY_BLUE = Color(0xFF0052CC);
+const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
+const Color LIGHT_BLUE = Color(0xFFE8F0FE);
+const Color BACKGROUND_BLUE = Color(0xFFF7F9FC);
 
 class FindBusScreen extends StatefulWidget {
   const FindBusScreen({super.key});
@@ -132,41 +139,48 @@ class _FindBusScreenState extends State<FindBusScreen> {
     final showingSuggestions = _searchController.text.trim().isNotEmpty;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F5F9),
+      backgroundColor: BACKGROUND_BLUE,
       drawer: _buildDrawer(),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E6BFF),
+        backgroundColor: PRIMARY_BLUE,
         foregroundColor: Colors.white,
-        elevation: 0,
+        elevation: 8,
         title: const Text(
           'Find My Bus',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
         ),
       ),
       body: Column(
         children: [
           // Search bar
           Container(
-            color: const Color(0xFF1E6BFF),
+            color: PRIMARY_BLUE,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: PRIMARY_BLUE.withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ],
               ),
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
                 decoration: InputDecoration(
                   hintText: 'Bus No., school or college',
-                  prefixIcon: const Icon(Icons.search, color: Color(0xFF1E6BFF)),
+                  prefixIcon: const Icon(Icons.search, color: PRIMARY_BLUE),
                   suffixIcon: _searching
                       ? const Padding(
                           padding: EdgeInsets.all(12),
                           child: SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE)),
                           ),
                         )
                       : null,
@@ -218,10 +232,10 @@ class _FindBusScreenState extends State<FindBusScreen> {
           leading: CircleAvatar(
             backgroundColor: isSchool
                 ? Colors.orange.shade50
-                : const Color(0xFF1E6BFF).withOpacity(0.1),
+                : LIGHT_BLUE,
             child: Icon(
               isSchool ? Icons.school : Icons.directions_bus,
-              color: isSchool ? Colors.orange : const Color(0xFF1E6BFF),
+              color: isSchool ? Colors.orange : PRIMARY_BLUE,
             ),
           ),
           title: Text(
@@ -248,7 +262,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
 
   Widget _buildBrowseList() {
     if (_loadingBrowse) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE)));
     }
     if (_browseBuses.isEmpty) {
       return const Center(
@@ -274,8 +288,8 @@ class _FindBusScreenState extends State<FindBusScreen> {
         for (final bus in _browseBuses)
           ListTile(
             leading: CircleAvatar(
-              backgroundColor: const Color(0xFF1E6BFF).withOpacity(0.1),
-              child: const Icon(Icons.directions_bus, color: Color(0xFF1E6BFF)),
+              backgroundColor: LIGHT_BLUE,
+              child: const Icon(Icons.directions_bus, color: PRIMARY_BLUE),
             ),
             title: Text(
               bus['bus_number'] ?? '',
@@ -295,8 +309,8 @@ class _FindBusScreenState extends State<FindBusScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 8,
+            color: PRIMARY_BLUE.withOpacity(0.1),
+            blurRadius: 12,
             offset: const Offset(0, -2),
           ),
         ],
@@ -305,17 +319,14 @@ class _FindBusScreenState extends State<FindBusScreen> {
         top: false,
         child: Row(
           children: [
-            Expanded(
+          Expanded(
               child: _BottomBarButton(
-                icon: Icons.person_add_alt,
-                label: 'Register Student',
+                icon: Icons.admin_panel_settings_outlined,
+                label: 'Admin Login',
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Ask your school admin to register your child\'s bus.',
-                      ),
-                    ),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
                   );
                 },
               ),
@@ -344,30 +355,250 @@ class _FindBusScreenState extends State<FindBusScreen> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          const DrawerHeader(
-            decoration: BoxDecoration(color: Color(0xFF1E6BFF)),
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: Text(
-                'Find My Bus',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [PRIMARY_BLUE, SECONDARY_BLUE],
+              ),
+            ),
+            child: DrawerHeader(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Find My Bus',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Text(
+                    'Find My Bus - Easy Tracking',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const _DrawerItem(icon: Icons.language, label: 'Language'),
-          const _DrawerItem(icon: Icons.person_outline, label: 'Profile'),
-          const _DrawerItem(icon: Icons.star_border, label: 'Rate us'),
-          const _DrawerItem(icon: Icons.support_agent, label: 'Support'),
-          const _DrawerItem(icon: Icons.lightbulb_outline, label: 'Suggest a feature'),
-          const _DrawerItem(icon: Icons.help_outline, label: 'How to use'),
-          const Divider(),
+
+          // 📞 SUPPORT SECTION
+          Container(
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: LIGHT_BLUE,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: PRIMARY_BLUE, width: 1.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '📞 Support',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: PRIMARY_BLUE,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(Icons.phone, color: PRIMARY_BLUE, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          // Open phone dialer
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Call: +91 6369669753')),
+                          );
+                        },
+                        child: const Text(
+                          '+91 6369669753',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: PRIMARY_BLUE,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.email, color: PRIMARY_BLUE, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          // Open email
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Email: gokulm4a1@gmail.com')),
+                          );
+                        },
+                        child: const Text(
+                          'gokulm4a1@gmail.com',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: PRIMARY_BLUE,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'MENU',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // 🎨 Theme & Settings
+          _DrawerItem(
+            icon: Icons.palette_outlined,
+            label: 'Theme & Settings',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Theme Settings - Coming Soon')),
+              );
+            },
+          ),
+
+          // 🌐 Language
+          _DrawerItem(
+            icon: Icons.language,
+            label: 'Language',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Language Settings - Coming Soon')),
+              );
+            },
+          ),
+
+          // 👤 Profile
+          _DrawerItem(
+            icon: Icons.person_outline,
+            label: 'My Profile',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Profile - Coming Soon')),
+              );
+            },
+          ),
+
+          // ⭐ Rate Us
+          _DrawerItem(
+            icon: Icons.star_border,
+            label: 'Rate us',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Opening App Store...')),
+              );
+            },
+          ),
+
+          // ❓ FAQ
+          _DrawerItem(
+            icon: Icons.help_outline,
+            label: 'FAQ & Help',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('FAQ - Coming Soon')),
+              );
+            },
+          ),
+
+          // 💡 Suggest Feature
+          _DrawerItem(
+            icon: Icons.lightbulb_outline,
+            label: 'Suggest a Feature',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Feature Request - Coming Soon')),
+              );
+            },
+          ),
+
+          // 📋 About
+          _DrawerItem(
+            icon: Icons.info_outline,
+            label: 'About Find My Bus',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('About - v1.0.0')),
+              );
+            },
+          ),
+
+          // 📤 Share App
+          _DrawerItem(
+            icon: Icons.share_outlined,
+            label: 'Share App',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Share - Coming Soon')),
+              );
+            },
+          ),
+
+          // 🔒 Privacy Policy
+          _DrawerItem(
+            icon: Icons.security_outlined,
+            label: 'Privacy Policy',
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Privacy Policy - Coming Soon')),
+              );
+            },
+          ),
+
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Divider(),
+          ),
+
+          // Driver Login
           ListTile(
-            leading: const Icon(Icons.badge_outlined),
-            title: const Text('Driver Login'),
+            leading: const Icon(Icons.badge_outlined, color: PRIMARY_BLUE),
+            title: const Text(
+              'Driver Login',
+              style: TextStyle(fontWeight: FontWeight.w600, color: PRIMARY_BLUE),
+            ),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
@@ -385,21 +616,24 @@ class _FindBusScreenState extends State<FindBusScreen> {
 class _DrawerItem extends StatelessWidget {
   final IconData icon;
   final String label;
+  final VoidCallback onTap;
 
-  const _DrawerItem({required this.icon, required this.label});
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: Colors.grey.shade700),
-      title: Text(label),
-      onTap: () {
-        Navigator.pop(context);
-        // NOTE: these drawer items are placeholders — Language,
-        // Profile, Rate us, Support, Suggest a feature, and How to
-        // use weren't specified beyond the wireframe, so they're
-        // stubbed here ready to wire up to real screens later.
-      },
+      leading: Icon(icon, color: PRIMARY_BLUE, size: 22),
+      title: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+      onTap: onTap,
     );
   }
 }
@@ -424,14 +658,14 @@ class _BottomBarButton extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: const Color(0xFF1E6BFF), size: 22),
+            Icon(icon, color: PRIMARY_BLUE, size: 22),
             const SizedBox(height: 4),
             Text(
               label,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1E6BFF),
+                color: PRIMARY_BLUE,
               ),
             ),
           ],

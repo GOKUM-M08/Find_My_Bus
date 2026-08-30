@@ -8,6 +8,8 @@
 import { useState } from 'react'
 
 const BACKEND_URL = 'http://localhost:8000'
+const PRIMARY_BLUE = '#0052CC'
+const LIGHT_BLUE = '#E8F0FE'
 
 export default function RouteBuilder({ buses }) {
   const [selectedBus, setSelectedBus] = useState('')
@@ -68,86 +70,155 @@ export default function RouteBuilder({ buses }) {
   }
 
   return (
-    <div style={{ padding: 40, maxWidth: 600 }}>
-      <h2 style={{ marginBottom: 24 }}>Build Route</h2>
+    <div style={{ padding: 40, maxWidth: 700, background: '#F7F9FC', minHeight: '100vh' }}>
+      <h2 style={{ marginBottom: 8, color: '#333' }}>📍 Build Route</h2>
+      <p style={{ color: '#666', marginBottom: 28, fontSize: 14 }}>Create pickup routes with ordered stops</p>
 
       {success && (
         <div style={{
-          background: '#dcfce7', color: '#166534',
-          padding: '12px 16px', borderRadius: 8, marginBottom: 20
+          background: '#D4EDDA', color: '#155724',
+          padding: '14px 16px', borderRadius: 8, marginBottom: 24,
+          border: '1px solid #C3E6CB', fontSize: 14
         }}>
           ✅ Route created successfully!
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>
-          Bus
-        </label>
-        <select
-          value={selectedBus}
-          onChange={e => setSelectedBus(e.target.value)}
-          style={{ width: '100%', padding: '10px 14px', border: '1px solid #ddd',
-                   borderRadius: 8, fontSize: 15, boxSizing: 'border-box' }}>
-          <option value=''>Select Bus</option>
-          {buses.map(b => (
-            <option key={b.id} value={b.id}>{b.bus_number}</option>
-          ))}
-        </select>
-      </div>
+      <div style={{ background: 'white', padding: 32, borderRadius: 12, boxShadow: '0 4px 12px rgba(0,82,204,0.08)' }}>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, fontSize: 14, color: '#333' }}>
+            🚌 Select Bus
+          </label>
+          <select
+            value={selectedBus}
+            onChange={e => setSelectedBus(e.target.value)}
+            style={{ width: '100%', padding: '12px 14px', border: `2px solid #ddd`,
+                     borderRadius: 8, fontSize: 15, boxSizing: 'border-box',
+                     transition: 'all 0.3s', outline: 'none', cursor: 'pointer' }}
+            onFocus={(e) => e.target.style.borderColor = PRIMARY_BLUE}
+            onBlur={(e) => e.target.style.borderColor = '#ddd'}>
+            <option value=''>Select Bus</option>
+            {buses.map(b => (
+              <option key={b.id} value={b.id}>{b.bus_number} - {b.driver_name || 'No Driver'}</option>
+            ))}
+          </select>
+        </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>
-          Route Name
-        </label>
-        <input
-          type="text"
-          value={routeName}
-          onChange={e => setRouteName(e.target.value)}
-          placeholder="e.g. Morning Pickup — North Zone"
-          style={{ width: '100%', padding: '10px 14px', border: '1px solid #ddd',
-                   borderRadius: 8, fontSize: 15, boxSizing: 'border-box' }}
-        />
-      </div>
-
-      <h3 style={{ marginTop: 28, marginBottom: 12, fontSize: 15 }}>
-        Stops (in order)
-      </h3>
-
-      {stops.map((stop, i) => (
-        <div key={i} style={{
-          border: '1px solid #E2E8F0', borderRadius: 8,
-          padding: 14, marginBottom: 12, position: 'relative'
-        }}>
-          <span style={{
-            position: 'absolute', top: -10, left: 12, background: 'white',
-            padding: '0 6px', fontSize: 12, color: '#64748B', fontWeight: 600
-          }}>
-            Stop {i + 1}
-          </span>
+        <div style={{ marginBottom: 28 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, fontSize: 14, color: '#333' }}>
+            Route Name
+          </label>
           <input
-            placeholder="Stop name"
-            value={stop.stop_name}
-            onChange={e => updateStop(i, 'stop_name', e.target.value)}
-            style={{ width: '100%', padding: '8px 10px', marginBottom: 8,
-                     border: '1px solid #ddd', borderRadius: 6, boxSizing: 'border-box' }}
+            type="text"
+            value={routeName}
+            onChange={e => setRouteName(e.target.value)}
+            placeholder="e.g. Morning Pickup — North Zone"
+            style={{ width: '100%', padding: '12px 14px', border: `2px solid #ddd`,
+                     borderRadius: 8, fontSize: 15, boxSizing: 'border-box',
+                     transition: 'all 0.3s', outline: 'none' }}
+            onFocus={(e) => e.target.style.borderColor = PRIMARY_BLUE}
+            onBlur={(e) => e.target.style.borderColor = '#ddd'}
           />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        </div>
+
+        <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 15, fontWeight: 700, color: '#333' }}>
+          🏁 Stops (in order)
+        </h3>
+
+        {stops.map((stop, i) => (
+          <div key={i} style={{
+            border: `2px solid ${LIGHT_BLUE}`, borderRadius: 10,
+            padding: 18, marginBottom: 14, position: 'relative',
+            background: '#F7F9FC'
+          }}>
+            <span style={{
+              position: 'absolute', top: -14, left: 16, background: PRIMARY_BLUE,
+              color: 'white', padding: '4px 10px', fontSize: 12, 
+              fontWeight: 700, borderRadius: 6
+            }}>
+              Stop {i + 1}
+            </span>
             <input
-              placeholder="Latitude"
-              value={stop.latitude}
-              onChange={e => updateStop(i, 'latitude', e.target.value)}
-              style={{ flex: 1, padding: '8px 10px', border: '1px solid #ddd',
-                       borderRadius: 6, boxSizing: 'border-box' }}
+              placeholder="Stop name (e.g. School Gate A)"
+              value={stop.stop_name}
+              onChange={e => updateStop(i, 'stop_name', e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', marginBottom: 10,
+                       border: '1px solid #ddd', borderRadius: 6, boxSizing: 'border-box',
+                       fontSize: 14 }}
             />
-            <input
-              placeholder="Longitude"
-              value={stop.longitude}
-              onChange={e => updateStop(i, 'longitude', e.target.value)}
-              style={{ flex: 1, padding: '8px 10px', border: '1px solid #ddd',
-                       borderRadius: 6, boxSizing: 'border-box' }}
-            />
+            <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+              <input
+                placeholder="Latitude (e.g. 13.0827)"
+                value={stop.latitude}
+                onChange={e => updateStop(i, 'latitude', e.target.value)}
+                type="number"
+                step="0.0001"
+                style={{ flex: 1, padding: '10px 12px', border: '1px solid #ddd',
+                         borderRadius: 6, boxSizing: 'border-box', fontSize: 14 }}
+              />
+              <input
+                placeholder="Longitude (e.g. 80.2707)"
+                value={stop.longitude}
+                onChange={e => updateStop(i, 'longitude', e.target.value)}
+                type="number"
+                step="0.0001"
+                style={{ flex: 1, padding: '10px 12px', border: '1px solid #ddd',
+                         borderRadius: 6, boxSizing: 'border-box', fontSize: 14 }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input
+                placeholder="Expected time (e.g. 07:15 AM)"
+                value={stop.expected_time}
+                onChange={e => updateStop(i, 'expected_time', e.target.value)}
+                style={{ flex: 1, padding: '10px 12px', border: '1px solid #ddd',
+                         borderRadius: 6, boxSizing: 'border-box', fontSize: 14 }}
+              />
+              <button
+                onClick={() => removeStop(i)}
+                style={{ background: '#FEE2E2', color: '#991B1B', border: 'none',
+                         borderRadius: 6, padding: '0 14px', cursor: 'pointer',
+                         fontWeight: 600, transition: 'all 0.3s' }}
+                onMouseEnter={(e) => e.target.style.background = '#FECACA'}
+                onMouseLeave={(e) => e.target.style.background = '#FEE2E2'}>
+                ✕ Remove
+              </button>
+            </div>
           </div>
+        ))}
+
+        <button
+          onClick={addStop}
+          style={{
+            background: LIGHT_BLUE, color: PRIMARY_BLUE, border: `2px solid ${PRIMARY_BLUE}`,
+            padding: '12px 16px', borderRadius: 8, cursor: 'pointer',
+            width: '100%', marginBottom: 20, fontWeight: 600,
+            transition: 'all 0.3s'
+          }}
+          onMouseEnter={(e) => e.target.style.background = PRIMARY_BLUE && (e.target.style.color = 'white')}
+          onMouseLeave={(e) => e.target.style.background = LIGHT_BLUE && (e.target.style.color = PRIMARY_BLUE)}>
+          + Add Stop
+        </button>
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading || !selectedBus || !routeName || stops.length === 0}
+          style={{
+            background: loading || !selectedBus || !routeName || stops.length === 0 ? '#9DB3D6' : PRIMARY_BLUE, 
+            color: 'white', border: 'none',
+            padding: '14px 32px', borderRadius: 8, fontSize: 16,
+            cursor: loading || !selectedBus || !routeName || stops.length === 0 ? 'not-allowed' : 'pointer', 
+            width: '100%',
+            fontWeight: 600,
+            transition: 'all 0.3s'
+          }}
+          onMouseEnter={(e) => !loading && selectedBus && routeName && stops.length > 0 && (e.target.style.background = '#00338C')}
+          onMouseLeave={(e) => !loading && selectedBus && routeName && stops.length > 0 && (e.target.style.background = PRIMARY_BLUE)}>
+          {loading ? 'Saving Route...' : '💾 Save Route'}
+        </button>
+      </div>
+    </div>
+  )
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               placeholder="Expected time (e.g. 07:15 AM)"
