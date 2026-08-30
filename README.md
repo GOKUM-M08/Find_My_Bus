@@ -31,7 +31,15 @@ bustrack/
 │       └── schools.py
 ├── flutter_app/        Parent, driver & admin mobile app
 │   ├── pubspec.yaml
+│   ├── assets/
+│   │   └── icon/            app launcher icon source
+│   ├── test/                Flutter widget/unit tests
 │   ├── android/app/src/main/AndroidManifest.xml
+│   ├── ios/                 iOS platform target
+│   ├── macos/                macOS platform target
+│   ├── linux/                Linux platform target
+│   ├── windows/               Windows platform target
+│   ├── web/                  Web platform target
 │   └── lib/
 │       ├── main.dart
 │       ├── screens/
