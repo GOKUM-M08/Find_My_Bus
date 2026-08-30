@@ -19,5 +19,5 @@
 /// build MUST pass the real URL explicitly.
 const String kBackendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
-  defaultValue: 'http://10.0.2.2:8000',
+  defaultValue: 'https://find-my-bus-teu4.onrender.com',
 );
