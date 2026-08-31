@@ -284,31 +284,109 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     _busMarker = Marker(
       point: _currentBusLocation,
-      width: 240,
-      height: 120,
-      alignment: Alignment.bottomCenter,
-      child: Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          // Speech Bubble Callout Card above Vehicle
-          _BusCalloutCard(
-            busNumber: widget.busNumber,
-            routeName: _routeName.isNotEmpty ? _routeName : 'School Route',
-            statusText: statusText,
-            statusColor: statusColor,
-          ),
-
-          // Vehicle Pin Avatar at bottom of callout
-          Positioned(
-            bottom: 0,
-            child: _BusVehicleAvatar(
+      width: 48,
+      height: 48,
+      alignment: Alignment.center,
+      child: GestureDetector(
+        onTap: () => _showBusDetailsSheet(),
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            // Vehicle Pin Avatar anchored precisely at geometric center (24, 24)
+            _BusVehicleAvatar(
               isLive: _isLive,
               isMoving: isMoving,
               statusColor: statusColor,
             ),
-          ),
-        ],
+
+            // Speech Bubble Callout Card floated above avatar via clipBehavior
+            Positioned(
+              bottom: 46,
+              child: _BusCalloutCard(
+                busNumber: widget.busNumber,
+                routeName: _routeName.isNotEmpty ? _routeName : 'School Route',
+                statusText: statusText,
+                statusColor: statusColor,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _showBusDetailsSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final isMoving = _isLive && _busSpeed > 1;
+        final statusText = !_isLive ? 'Offline' : (isMoving ? 'Moving' : 'Stopped');
+        final statusColor = !_isLive
+            ? Colors.grey
+            : (isMoving ? Colors.green.shade600 : Colors.amber.shade700);
+
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: LIGHT_BLUE,
+                    child: const Icon(Icons.directions_bus_rounded, color: PRIMARY_BLUE, size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Bus ${widget.busNumber}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              statusText,
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: statusColor),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _InfoDetailColumn(label: 'CURRENT SPEED', value: '${_busSpeed.toStringAsFixed(0)} km/h'),
+                  _InfoDetailColumn(label: 'STOPS REMAINING', value: '$_stopsAway stops'),
+                  _InfoDetailColumn(label: 'TARGET ETA', value: _eta),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -733,6 +811,30 @@ class _StopNodeMarker extends StatelessWidget {
           size: 14,
         ),
       ),
+    );
+  }
+}
+
+class _InfoDetailColumn extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoDetailColumn({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: PRIMARY_BLUE),
+        ),
+      ],
     );
   }
 }
