@@ -165,33 +165,52 @@ def get_eta(bus_id: str, stop_id: str):
     }
 
 
-# ─── STEP 11.4 — Notify parents when bus is 2 stops away ───────────
+# ─── STEP 11.4 — Notify topic subscribers when bus is 2 stops away ─
+
+_notified_stops: dict = {}
 
 async def check_and_notify_parents(bus_id: str):
     """
-    After every GPS update, check if any parent's stop
-    is 2 stops away and send them a push notification.
-    Call this from gps_listener.py's update_location() after
-    each new GPS point is saved.
+    After every GPS update, check each stop on the bus's route.
+    When a stop is exactly 2 stops away, push a notification to that
+    stop's FCM topic (bus_<busId>_stop_<stopId>).
+    De-duplicates notifications while lingering at 2 stops away, and
+    resets state once the bus moves away.
     """
-    # Get all students on this bus
-    students = supabase.table("students")\
-        .select("id, student_name, stop_id, fcm_token")\
-        .eq("bus_id", bus_id)\
-        .execute().data
+    try:
+        bus_res = supabase.table("buses").select("bus_number").eq("id", bus_id).execute()
+        bus_number = bus_res.data[0]["bus_number"] if bus_res.data else "Your Bus"
 
-    for student in students:
-        if not student.get("fcm_token") or not student.get("stop_id"):
-            continue
+        route_res = supabase.table("routes").select("id").eq("bus_id", bus_id).execute()
+        if not route_res.data:
+            return
 
-        # Get ETA for this student's stop
-        eta_data = get_eta(bus_id, student["stop_id"])
+        route_id = route_res.data[0]["id"]
+        stops = supabase.table("stops").select("id, stop_name").eq("route_id", route_id).execute().data
 
-        # If bus is exactly 2 stops away — notify
-        if eta_data.get("stops_away") == 2:
-            send_bus_notification(
-                fcm_token=student["fcm_token"],
-                bus_number="Your Bus",
-                message=f"Bus is 2 stops away! "
-                        f"Arriving in ~{eta_data['minutes']} minutes."
-            )
+        for stop in stops:
+            stop_id = str(stop["id"])
+            eta_data = get_eta(bus_id, stop_id)
+            stops_away = eta_data.get("stops_away")
+            cache_key = f"{bus_id}:{stop_id}"
+
+            if stops_away == 2:
+                if not _notified_stops.get(cache_key, False):
+                    topic = f"bus_{bus_id}_stop_{stop_id}"
+                    stop_name = stop.get("stop_name", "your stop")
+                    minutes = eta_data.get("minutes", 5)
+                    message = f"Bus is 2 stops away from {stop_name}! Arriving in ~{minutes} min."
+                    try:
+                        send_bus_notification(
+                            topic=topic,
+                            bus_number=bus_number,
+                            message=message,
+                        )
+                    except Exception as e:
+                        print(f"Failed to send topic notification to {topic}: {e}")
+                    _notified_stops[cache_key] = True
+            else:
+                _notified_stops[cache_key] = False
+    except Exception as e:
+        print(f"Error checking notifications for bus {bus_id}: {e}")
+

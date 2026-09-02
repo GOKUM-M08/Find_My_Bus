@@ -68,7 +68,7 @@ class _StopsScreenState extends State<StopsScreen> {
         .order('stop_order');
 
     setState(() {
-      _stops = List<Map<String, dynamic>>.from(stopsResult);
+      _stops = List<Map<String, dynamic>>.from(stopsResult).reversed.toList();
       _loading = false;
     });
 

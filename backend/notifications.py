@@ -1,9 +1,8 @@
 """
-Firebase Cloud Messaging helper.
-See guide STEP 6 — Firebase Push Notifications, section 5.3
-"Send Notification from Backend".
+Firebase Cloud Messaging helper for topic-based push notifications.
 """
 import os
+import json
 import firebase_admin
 from firebase_admin import credentials, messaging
 
@@ -12,39 +11,47 @@ _firebase_app = None
 
 def _get_firebase_app():
     """
-    Lazily initializes Firebase only when a notification is actually
-    sent, instead of at import time. This lets the rest of the
-    backend run fine even before you've set up
-    firebase_service_account.json.
+    Lazily initializes Firebase Admin SDK.
+    Supports both local file (firebase_service_account.json) and
+    FIREBASE_SERVICE_ACCOUNT_JSON env var (for Render deployment).
     """
     global _firebase_app
     if _firebase_app is not None:
         return _firebase_app
 
     cred_path = os.getenv("FIREBASE_CREDENTIALS", "firebase_service_account.json")
-    if not os.path.exists(cred_path):
-        raise FileNotFoundError(
-            f"'{cred_path}' not found. Push notifications are disabled until "
-            "you download your Firebase service account key (see STEP 6 / "
-            "Phase 8 of the setup guide) and place it in the backend folder."
-        )
+    if os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+    else:
+        env_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if env_json:
+            try:
+                cred_dict = json.loads(env_json)
+                cred = credentials.Certificate(cred_dict)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON env var: {e}"
+                )
+        else:
+            raise FileNotFoundError(
+                f"Neither '{cred_path}' file nor FIREBASE_SERVICE_ACCOUNT_JSON env var found. "
+                "Push notifications are disabled."
+            )
 
-    cred = credentials.Certificate(cred_path)
     _firebase_app = firebase_admin.initialize_app(cred)
     return _firebase_app
 
 
-def send_bus_notification(fcm_token: str, bus_number: str, message: str):
-    """Send push notification to a parent."""
+def send_bus_notification(topic: str, bus_number: str, message: str):
+    """Send push notification to an FCM topic."""
     _get_firebase_app()
     notification = messaging.Message(
         notification=messaging.Notification(
             title=f"Bus {bus_number}",
             body=message,
         ),
-        token=fcm_token,
+        topic=topic,
     )
-    messaging.send(notification)
-
-# Example: call this when bus is near student's stop
-# send_bus_notification(token, "TN09AB1234", "Your bus is 2 stops away!")
+    response = messaging.send(notification)
+    print(f"[FCM BACKEND SUCCESS] Sent notification to topic '{topic}': message_id={response}")
+    return response

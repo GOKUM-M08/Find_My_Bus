@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart' hide Path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+import '../services/notification_service.dart';
 
 // Palette matching home_screen.dart & main.dart
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -40,6 +41,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   String _routeName = '';
 
   StreamSubscription? _liveLocationSub;
+  StreamSubscription? _fcmSub;
 
   LatLng _currentBusLocation = const LatLng(13.0827, 80.2707);
   double _busSpeed = 0;
@@ -63,7 +65,37 @@ class _TrackingScreenState extends State<TrackingScreen>
       _checkLiveStatus();
     });
 
+    _fcmSub = NotificationService().onForegroundMessage.listen((message) {
+      if (!mounted) return;
+      final title = message.notification?.title ?? 'Bus Update';
+      final body = message.notification?.body ?? '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.notifications_active, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (body.isNotEmpty) Text(body, style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: PRIMARY_BLUE,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+
     if (widget.stopId != null) {
+      NotificationService().subscribeToStop(widget.busId, widget.stopId!);
       _fetchETA(widget.stopId!);
       _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _fetchETA(widget.stopId!);
@@ -412,6 +444,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   @override
   void dispose() {
     _liveLocationSub?.cancel();
+    _fcmSub?.cancel();
     _etaTimer?.cancel();
     _liveCheckTimer?.cancel();
     super.dispose();

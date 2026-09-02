@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config.dart';
 
 class DriverScreen extends StatefulWidget {
   final String busId;
@@ -92,6 +95,23 @@ class _DriverScreenState extends State<DriverScreen> {
         'longitude': pos.longitude,
         'speed': (pos.speed * 3.6).clamp(0, 200),
       });
+
+      // Post to backend internal broadcast endpoint to trigger FCM topic notifications
+      try {
+        final speedKmh = (pos.speed * 3.6).clamp(0.0, 200.0);
+        await http.post(
+          Uri.parse('$kBackendBaseUrl/internal/broadcast/${widget.busId}'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'latitude': pos.latitude,
+            'longitude': pos.longitude,
+            'speed': speedKmh,
+            'device_id': widget.deviceId,
+          }),
+        ).timeout(const Duration(seconds: 5));
+      } catch (broadcastErr) {
+        debugPrint('Backend broadcast POST failed: $broadcastErr');
+      }
 
       setState(() {
         _currentLat = pos.latitude;

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/find_bus_screen.dart';
+import 'services/notification_service.dart';
 
 // Professional Blue Color Palette
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -17,9 +19,8 @@ void main() async {
     anonKey: 'sb_publishable_4JqOykRfsu6xjCQ3KegCbw_oVfEj5DK',
   );
 
-  // Firebase disabled for now — set this up in Phase 8 once you've
-  // created a Firebase project and added google-services.json.
-  // await Firebase.initializeApp();
+  await Firebase.initializeApp();
+  await NotificationService().initialize();
 
   runApp(const BusTrackApp());
 }
