@@ -3,6 +3,8 @@ This script runs separately and listens for GPS device data.
 AIS 140 GPS devices send data as raw TCP packets to a specific port.
 This parses those packets and updates the database.
 """
+import os 
+INTERNAL_API_URL = os.getenv("INTERNAL_API_URL", "http://localhost:8000")
 import asyncio
 import json
 import re
@@ -72,7 +74,7 @@ async def update_location(parsed: dict):
 
     async with httpx.AsyncClient() as client:
         await client.post(
-            f"http://localhost:8000/internal/broadcast/{bus_id}",
+             f"{INTERNAL_API_URL}/internal/broadcast/{bus_id}",
             json=parsed
         )
 

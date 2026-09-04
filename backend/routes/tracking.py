@@ -194,7 +194,7 @@ async def check_and_notify_parents(bus_id: str):
             stops_away = eta_data.get("stops_away")
             cache_key = f"{bus_id}:{stop_id}"
 
-            if stops_away == 2:
+            if stops_away is not None and 0 < stops_away <= 2:
                 if not _notified_stops.get(cache_key, False):
                     topic = f"bus_{bus_id}_stop_{stop_id}"
                     stop_name = stop.get("stop_name", "your stop")
