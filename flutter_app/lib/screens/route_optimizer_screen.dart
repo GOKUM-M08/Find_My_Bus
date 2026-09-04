@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'config.dart';
-
+import 'route_management_screen.dart';
+import 'bus_profile_screen.dart';
+import 'route_profile_screen.dart';
 // Brand Design Tokens (matching app identity)
 const Color kPrimaryBlue = Color(0xFF0052CC);
 const Color kSecondaryBlue = Color(0xFF1E6BFF);
@@ -38,10 +40,11 @@ class RouteOptimizerScreen extends StatefulWidget {
 class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
     with SingleTickerProviderStateMixin {
   // Optimization weights
-  double _cost = 0.40;
-  double _time = 0.30;
+  double _cost = 0.35;
+  double _time = 0.25;
   double _capacity = 0.20;
   double _condition = 0.10;
+  double _compatibility = 0.10;
 
   Map<String, dynamic>? _data;
   String? _error;
@@ -89,6 +92,7 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
           'w_time': _time.toStringAsFixed(2),
           'w_capacity': _capacity.toStringAsFixed(2),
           'w_condition': _condition.toStringAsFixed(2),
+          'w_compatibility': _compatibility.toStringAsFixed(2),
         },
       );
 
@@ -186,12 +190,13 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
     }).toList();
   }
 
-  void _applyPreset(double cost, double time, double capacity, double condition) {
+  void _applyPreset(double cost, double time, double capacity, double condition, double compatibility) {
     setState(() {
       _cost = cost;
       _time = time;
       _capacity = capacity;
       _condition = condition;
+      _compatibility = compatibility;
     });
     _fetch();
   }
@@ -258,6 +263,16 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
       ),
       actions: [
         IconButton(
+          tooltip: 'Route Management',
+          icon: const Icon(Icons.alt_route_rounded),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RouteManagementScreen(schoolId: widget.schoolId),
+            ),
+          ),
+        ),
+        IconButton(
           tooltip: 'Re-run Optimization',
           icon: _loading
               ? const SizedBox(
@@ -317,6 +332,7 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
       padding: const EdgeInsets.all(16),
       children: [
         _buildExecutiveKPIHeader(),
+        _buildBeforeAfterComparisonCard(),
         const SizedBox(height: 16),
         _buildWeightControlPanel(),
         const SizedBox(height: 20),
@@ -421,6 +437,125 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildBeforeAfterComparisonCard() {
+    final comp = _data?['comparison'] as Map<String, dynamic>?;
+    if (comp == null) return const SizedBox.shrink();
+
+    final beforeCost = _num((comp['before'] as Map?)?['diesel_cost']);
+    final afterCost = _num((comp['after'] as Map?)?['diesel_cost']);
+    final beforeCO2 = _num((comp['before'] as Map?)?['co2_kg']);
+    final afterCO2 = _num((comp['after'] as Map?)?['co2_kg']);
+
+    final costSavings = _num((comp['improvement'] as Map?)?['cost_savings_pct']);
+    final co2Reduction = _num((comp['improvement'] as Map?)?['co2_reduction_pct']);
+    final costSavedVal = _num((comp['improvement'] as Map?)?['cost_saved']);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kCardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.compare_arrows_rounded, color: kSecondaryBlue, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Baseline vs. Optimized Comparison',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: kTextPrimary),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: kSuccessGreen.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Saved ₹${costSavedVal.toStringAsFixed(0)}/day',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: kSuccessGreen),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildComparisonTile(
+                  title: 'Fuel Cost',
+                  beforeVal: '₹${beforeCost.toStringAsFixed(0)}',
+                  afterVal: '₹${afterCost.toStringAsFixed(0)}',
+                  changePct: costSavings,
+                  icon: Icons.local_gas_station_rounded,
+                  color: kSecondaryBlue,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildComparisonTile(
+                  title: 'CO₂ Footprint',
+                  beforeVal: '${beforeCO2.toStringAsFixed(0)}kg',
+                  afterVal: '${afterCO2.toStringAsFixed(0)}kg',
+                  changePct: co2Reduction,
+                  icon: Icons.eco_rounded,
+                  color: kSuccessGreen,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComparisonTile({
+    required String title,
+    required String beforeVal,
+    required String afterVal,
+    required double changePct,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(title, style: const TextStyle(fontSize: 11, color: kTextSecondary)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Baseline: $beforeVal', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+              Text('Optimized: $afterVal', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: kTextPrimary)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${changePct >= 0 ? "↓ $changePct%" : "↑ ${changePct.abs()}%"} improvement',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: changePct >= 0 ? kSuccessGreen : kWarningAmber),
+          ),
+        ],
+      ),
     );
   }
 
@@ -560,10 +695,12 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _buildPresetChip('⚡ Balanced', 0.40, 0.30, 0.20, 0.10),
-                  _buildPresetChip('💰 Cost Saver', 0.65, 0.15, 0.10, 0.10),
-                  _buildPresetChip('🌱 Eco & Green', 0.25, 0.20, 0.30, 0.25),
-                  _buildPresetChip('⏱️ Express Time', 0.20, 0.60, 0.10, 0.10),
+                  _buildPresetChip('⚡ Balanced', 0.35, 0.25, 0.20, 0.10, 0.10),
+                  _buildPresetChip('💰 Cost Saver', 0.60, 0.10, 0.15, 0.05, 0.10),
+                  _buildPresetChip('🌱 Eco & Green', 0.45, 0.10, 0.20, 0.15, 0.10),
+                  _buildPresetChip('⏱️ Fastest Routes', 0.15, 0.60, 0.10, 0.05, 0.10),
+                  _buildPresetChip('👥 Capacity First', 0.15, 0.15, 0.50, 0.10, 0.10),
+                  _buildPresetChip('🛠️ Fleet Health', 0.15, 0.15, 0.15, 0.40, 0.15),
                 ],
               ),
             ),
@@ -641,12 +778,14 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
     double t,
     double cap,
     double cond,
+    double comp,
   ) {
     final isSelected =
         (_cost - c).abs() < 0.02 &&
         (_time - t).abs() < 0.02 &&
         (_capacity - cap).abs() < 0.02 &&
-        (_condition - cond).abs() < 0.02;
+        (_condition - cond).abs() < 0.02 &&
+        (_compatibility - comp).abs() < 0.02;
 
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -661,7 +800,7 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
         selectedColor: kSecondaryBlue,
         backgroundColor: kLightBlue.withOpacity(0.5),
         showCheckmark: false,
-        onSelected: (_) => _applyPreset(c, t, cap, cond),
+        onSelected: (_) => _applyPreset(c, t, cap, cond, comp),
       ),
     );
   }
@@ -1430,22 +1569,31 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
       return const SizedBox.shrink();
     }
 
-    final busLabel = (_buses[busIdx] as Map)['label']?.toString() ?? 'Bus';
-    final routeLabel = (_routes[routeIdx] as Map)['label']?.toString() ?? 'Route';
+    final busMap = _buses[busIdx] as Map;
+    final routeMap = _routes[routeIdx] as Map;
+    final busLabel = busMap['label']?.toString() ?? 'Bus';
+    final routeLabel = routeMap['label']?.toString() ?? 'Route';
     final row = busIdx < _matrix.length ? _matrix[busIdx] as List : const [];
     final score = routeIdx < row.length ? _num(row[routeIdx]) : 0.0;
 
     final assignedMatch = _assignments.firstWhere(
       (a) =>
-          (a as Map)['bus']?['id'] == (_buses[busIdx] as Map)['id'] &&
-          a['route']?['id'] == (_routes[routeIdx] as Map)['id'],
+          (a as Map)['bus']?['id'] == busMap['id'] &&
+          a['route']?['id'] == routeMap['id'],
       orElse: () => null,
-    );
+    ) as Map<String, dynamic>?;
+
+    final isEligible = assignedMatch?['eligible'] ?? (score < 100);
+    final costScore = _num(assignedMatch?['cost_score'] ?? score);
+    final timeScore = _num(assignedMatch?['time_score'] ?? score);
+    final capScore = _num(assignedMatch?['capacity_score'] ?? score);
+    final condScore = _num(assignedMatch?['condition_score'] ?? score);
+    final compScore = _num(assignedMatch?['compatibility_score'] ?? score);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kLightBlue.withOpacity(0.6),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: kSecondaryBlue.withOpacity(0.3)),
       ),
@@ -1456,40 +1604,96 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
             children: [
               const Icon(Icons.touch_app_rounded, size: 18, color: kSecondaryBlue),
               const SizedBox(width: 6),
-              Text(
-                'Inspecting Pair: $busLabel × $routeLabel',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              Expanded(
+                child: Text(
+                  'Inspecting Pair: $busLabel × $routeLabel',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
-              Text(
-                'Score: ${score.toStringAsFixed(4)}',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimaryBlue),
+              if (!isEligible)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: kDangerRed.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'INELIGIBLE: Overcapacity',
+                    style: TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.bold, color: kDangerRed),
+                  ),
+                )
+              else
+                Text(
+                  'Score: ${(score * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimaryBlue),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text('Component Score Breakdown:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          _buildComponentProgressBar('Cost Score', costScore, kSecondaryBlue),
+          _buildComponentProgressBar('Time Score', timeScore, kPurpleAccent),
+          _buildComponentProgressBar('Capacity Score', capScore, kSuccessGreen),
+          _buildComponentProgressBar('Condition Score', condScore, kWarningAmber),
+          _buildComponentProgressBar('Compatibility Score', compScore, kPrimaryBlue),
+
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => BusProfileScreen(bus: busMap as Map<String, dynamic>)),
+                ),
+                icon: const Icon(Icons.directions_bus, size: 14),
+                label: const Text('View Bus Profile', style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => RouteProfileScreen(route: routeMap as Map<String, dynamic>)),
+                ),
+                icon: const Icon(Icons.alt_route, size: 14),
+                label: const Text('View Route Profile', style: TextStyle(fontSize: 11)),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          if (assignedMatch != null)
-            Row(
-              children: [
-                const Icon(Icons.stars_rounded, size: 14, color: kSuccessGreen),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    'Selected by Hungarian Algorithm as optimal assignment!',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade800,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            const Text(
-              'Not selected in global optimal assignment run.',
-              style: TextStyle(fontSize: 11, color: kTextSecondary),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComponentProgressBar(String label, double score, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: const TextStyle(fontSize: 10, color: kTextSecondary)),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: score.clamp(0.0, 1.0),
+                backgroundColor: color.withOpacity(0.1),
+                color: color,
+                minHeight: 6,
+              ),
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${(score * 100).toStringAsFixed(0)}%',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+          ),
         ],
       ),
     );

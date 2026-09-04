@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import buses, tracking, students, schools, route_optimizer
 import asyncio
 import json
+from database import redis_client
 
 app = FastAPI(title="BusTrack API", version="1.0.0")
 
@@ -73,6 +74,16 @@ async def internal_broadcast(bus_id: str, request: Request):
     checks whether any parent's stop is now 2 stops away (STEP 11.4).
     """
     location_data = await request.json()
+
+    # Populate Redis so get_eta() has fresh coordinates to read,
+    # regardless of whether this came from gps_listener.py or the driver app
+    redis_client.hset(f"bus:{bus_id}", mapping={
+        "latitude": location_data["latitude"],
+        "longitude": location_data["longitude"],
+        "speed": location_data.get("speed", 0),
+    })
+    redis_client.expire(f"bus:{bus_id}", 3600)
+
     await broadcast_location(bus_id, location_data)
     await tracking.check_and_notify_parents(bus_id)
     return {"status": "broadcast sent"}

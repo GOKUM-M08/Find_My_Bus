@@ -47,7 +47,9 @@ class _DriverScreenState extends State<DriverScreen> {
       permission = await Geolocator.requestPermission();
     }
     if (permission == LocationPermission.deniedForever) {
-      setState(() => _status = "Location permission denied. Enable in settings.");
+      if (mounted) {
+        setState(() => _status = "Location permission denied. Enable in settings.");
+      }
       return false;
     }
     return true;
@@ -55,7 +57,7 @@ class _DriverScreenState extends State<DriverScreen> {
 
   void _startTracking() async {
     bool hasPermission = await _checkPermission();
-    if (!hasPermission) return;
+    if (!hasPermission || !mounted) return;
 
     setState(() {
       _isTracking = true;
@@ -113,6 +115,7 @@ class _DriverScreenState extends State<DriverScreen> {
         debugPrint('Backend broadcast POST failed: $broadcastErr');
       }
 
+      if (!mounted) return;
       setState(() {
         _currentLat = pos.latitude;
         _currentLon = pos.longitude;
@@ -121,7 +124,9 @@ class _DriverScreenState extends State<DriverScreen> {
         _status = "Live — update #$_updateCount sent";
       });
     } catch (e) {
-      setState(() => _status = "Error: $e");
+      if (mounted) {
+        setState(() => _status = "Error: $e");
+      }
     }
   }
 

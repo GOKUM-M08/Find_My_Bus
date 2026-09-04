@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/find_bus_screen.dart';
 import 'services/notification_service.dart';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 // Professional Blue Color Palette
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
 const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
@@ -19,8 +19,10 @@ void main() async {
     anonKey: 'sb_publishable_4JqOykRfsu6xjCQ3KegCbw_oVfEj5DK',
   );
 
+if (!kIsWeb) {
   await Firebase.initializeApp();
   await NotificationService().initialize();
+}
 
   runApp(const BusTrackApp());
 }
