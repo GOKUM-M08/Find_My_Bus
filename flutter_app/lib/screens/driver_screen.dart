@@ -110,7 +110,7 @@ class _DriverScreenState extends State<DriverScreen> {
             'speed': speedKmh,
             'device_id': widget.deviceId,
           }),
-        ).timeout(const Duration(seconds: 5));
+        ).timeout(const Duration(seconds: 60));
       } catch (broadcastErr) {
         debugPrint('Backend broadcast POST failed: $broadcastErr');
       }
