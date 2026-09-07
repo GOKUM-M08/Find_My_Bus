@@ -8,6 +8,12 @@ import 'language_service.dart';
 
 enum BusIntent { location, eta, delay, stopsAway, unknown }
 
+class IntentKeyword {
+  final String keyword;
+  final String lang; // 'ta' or 'en'
+  const IntentKeyword(this.keyword, this.lang);
+}
+
 class VoiceAssistantService {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
@@ -71,16 +77,22 @@ class VoiceAssistantService {
     return hasTamilChar ? 'ta' : 'en';
   }
 
-  /// Full voice pipeline: Recognized text -> auto-detect response language -> intent -> backend query -> format response -> speak.
+  /// Full voice pipeline: Recognized text -> intent & keyword language -> fallback Unicode -> backend query -> speak response.
   Future<String> handleQuery({
     required String recognizedText,
     required String busId,
     String? stopId,
   }) async {
-    final responseLangCode = detectResponseLanguage(recognizedText);
-    debugPrint('[Voice Assistant] Auto-detected response language: $responseLangCode for text: "$recognizedText"');
+    final (intent, matchedLang) = _matchIntent(recognizedText);
+    final unicodeLang = detectResponseLanguage(recognizedText);
 
-    final intent = _matchIntent(recognizedText);
+    // Primary signal: matched keyword language ('ta' or 'en').
+    // Secondary signal: Tamil Unicode script detection.
+    final responseLangCode = (matchedLang == 'ta' || unicodeLang == 'ta') ? 'ta' : 'en';
+
+    debugPrint(
+        '[Voice Assistant] Matched Intent: $intent, Matched Lang: $matchedLang, Unicode Lang: $unicodeLang => Response Lang: $responseLangCode for "$recognizedText"');
+
     final responseText = await _resolveIntent(
       intent: intent,
       busId: busId,
@@ -91,34 +103,134 @@ class VoiceAssistantService {
     return responseText;
   }
 
+  // ---------------- Intent Keyword Definitions ----------------
+  static const locationKeywords = [
+    // English
+    IntentKeyword('where', 'en'),
+    IntentKeyword('location', 'en'),
+    IntentKeyword('places', 'en'),
+    IntentKeyword('where is', 'en'),
+    IntentKeyword('where is the bus', 'en'),
+    IntentKeyword('current location', 'en'),
+    IntentKeyword('find the bus', 'en'),
+    IntentKeyword('track the bus', 'en'),
+    IntentKeyword('bus position', 'en'),
+    IntentKeyword('which area', 'en'),
+    IntentKeyword('near which stop', 'en'),
+    // Tanglish
+    IntentKeyword('bus enga', 'ta'),
+    IntentKeyword('bus enga irukku', 'ta'),
+    IntentKeyword('engirukku', 'ta'),
+    IntentKeyword('எங்க இருக்கு bus', 'ta'),
+    IntentKeyword('bus location enna', 'ta'),
+    // Tamil script
+    IntentKeyword('எங்கே', 'ta'),
+    IntentKeyword('எங்க இருக்கு', 'ta'),
+    IntentKeyword('இடம்', 'ta'),
+    IntentKeyword('எங்கே இருக்கு', 'ta'),
+    IntentKeyword('எங்க', 'ta'),
+    IntentKeyword('பேருந்து எங்கே', 'ta'),
+    IntentKeyword('இப்போது எங்கே', 'ta'),
+  ];
+
+  static const etaKeywords = [
+    // English
+    IntentKeyword('when will', 'en'),
+    IntentKeyword('eta', 'en'),
+    IntentKeyword('how long', 'en'),
+    IntentKeyword('arrival', 'en'),
+    IntentKeyword('when is the bus coming', 'en'),
+    IntentKeyword('when does it arrive', 'en'),
+    IntentKeyword('how much time', 'en'),
+    IntentKeyword('what time will it come', 'en'),
+    IntentKeyword('will it reach soon', 'en'),
+    // Tanglish
+    IntentKeyword('epo varum', 'ta'),
+    IntentKeyword('eppo varum', 'ta'),
+    IntentKeyword('evlo neram', 'ta'),
+    IntentKeyword('epo vandhu serum', 'ta'),
+    // Tamil script
+    IntentKeyword('எப்போ வரும்', 'ta'),
+    IntentKeyword('எப்போது வரும்', 'ta'),
+    IntentKeyword('எவ்வளவு நேரம்', 'ta'),
+    IntentKeyword('நேரம்', 'ta'),
+    IntentKeyword('எப்போது வந்து சேரும்', 'ta'),
+    IntentKeyword('இன்னும் எவ்வளவு நேரம்', 'ta'),
+  ];
+
+  static const delayKeywords = [
+    // English
+    IntentKeyword('late', 'en'),
+    IntentKeyword('delay', 'en'),
+    IntentKeyword('delayed', 'en'),
+    IntentKeyword('on time', 'en'),
+    IntentKeyword('running behind', 'en'),
+    IntentKeyword('running behind schedule', 'en'),
+    IntentKeyword('is it late today', 'en'),
+    IntentKeyword('bus running late', 'en'),
+    IntentKeyword('any delay', 'en'),
+    // Tanglish
+    IntentKeyword('thamathama', 'ta'),
+    IntentKeyword('thamathamaga irukka', 'ta'),
+    IntentKeyword('late ah irukka', 'ta'),
+    IntentKeyword('correct time la varuma', 'ta'),
+    // Tamil script
+    IntentKeyword('தாமதம', 'ta'),
+    IntentKeyword('தாமதம்', 'ta'),
+    IntentKeyword('லேட்', 'ta'),
+    IntentKeyword('தாமதமா', 'ta'),
+    IntentKeyword('தாமதமாக இருக்கா', 'ta'),
+    IntentKeyword('சரியான நேரத்தில் வருமா', 'ta'),
+  ];
+
+  static const stopsAwayKeywords = [
+    // English
+    IntentKeyword('how many stops', 'en'),
+    IntentKeyword('stops away', 'en'),
+    IntentKeyword('how far', 'en'),
+    IntentKeyword('how many stops left', 'en'),
+    IntentKeyword('distance to my stop', 'en'),
+    IntentKeyword('how far is the bus from my stop', 'en'),
+    IntentKeyword('stops remaining', 'en'),
+    // Tanglish
+    IntentKeyword('ethana stop', 'ta'),
+    IntentKeyword('evlo stop irukku', 'ta'),
+    IntentKeyword('nu stop dhaan irukku', 'ta'),
+    // Tamil script
+    IntentKeyword('எத்தனை stop', 'ta'),
+    IntentKeyword('எத்தனை நிறுத்தம்', 'ta'),
+    IntentKeyword('எத்தனை ஸ்டாப்', 'ta'),
+    IntentKeyword('நிறுத்தங்கள்', 'ta'),
+    IntentKeyword('எத்தனை நிறுத்தங்கள் தள்ளி', 'ta'),
+    IntentKeyword('இன்னும் எத்தனை நிறுத்தம்', 'ta'),
+  ];
+
   // ---------------- Intent Matching ----------------
-  BusIntent _matchIntent(String text) {
+  (BusIntent, String?) _matchIntent(String text) {
     final t = text.toLowerCase().trim();
 
-    const locationKeywords = [
-      'where', 'location', 'bus enga', 'engirukku', 'எங்கே', 'எங்க இருக்கு',
-      'இடம்', 'எங்கே இருக்கு', 'எங்க', 'places'
-    ];
-    const etaKeywords = [
-      'when will', 'eta', 'how long', 'epo varum', 'எப்போ வரும்', 'எப்போது வரும்',
-      'எவ்வளவு நேரம்', 'arrival', 'நேரம்'
-    ];
-    const delayKeywords = [
-      'late', 'delay', 'delayed', 'thamathama', 'தாமதம', 'தாமதம்', 'லேட்',
-      'தாமதமா', 'on time'
-    ];
-    const stopsAwayKeywords = [
-      'how many stops', 'stops away', 'how far', 'எத்தனை stop', 'எத்தனை நிறுத்தம்',
-      'எத்தனை ஸ்டாப்', 'நிறுத்தங்கள்'
-    ];
+    IntentKeyword? findMatch(List<IntentKeyword> keywords) {
+      for (final k in keywords) {
+        if (t.contains(k.keyword.toLowerCase())) {
+          return k;
+        }
+      }
+      return null;
+    }
 
-    bool has(List<String> keywords) => keywords.any((k) => t.contains(k));
+    final stopsMatch = findMatch(stopsAwayKeywords);
+    if (stopsMatch != null) return (BusIntent.stopsAway, stopsMatch.lang);
 
-    if (has(stopsAwayKeywords)) return BusIntent.stopsAway;
-    if (has(delayKeywords)) return BusIntent.delay;
-    if (has(etaKeywords)) return BusIntent.eta;
-    if (has(locationKeywords)) return BusIntent.location;
-    return BusIntent.unknown;
+    final delayMatch = findMatch(delayKeywords);
+    if (delayMatch != null) return (BusIntent.delay, delayMatch.lang);
+
+    final etaMatch = findMatch(etaKeywords);
+    if (etaMatch != null) return (BusIntent.eta, etaMatch.lang);
+
+    final locMatch = findMatch(locationKeywords);
+    if (locMatch != null) return (BusIntent.location, locMatch.lang);
+
+    return (BusIntent.unknown, null);
   }
 
   // ---------------- Backend Resolution ----------------

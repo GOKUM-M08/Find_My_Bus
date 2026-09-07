@@ -290,14 +290,17 @@ class _StopsScreenState extends State<StopsScreen> {
                           children: [
                             const Icon(Icons.circle, color: Colors.green, size: 10),
                             const SizedBox(width: 8),
-                            Text(
-                              languageService.isTamil
-                                  ? 'பேருந்து நேரலையில் உள்ளது'
-                                  : 'Bus is live — updated moments ago',
-                              style: const TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                            Expanded(
+                              child: Text(
+                                languageService.isTamil
+                                    ? 'பேருந்து நேரலையில் உள்ளது'
+                                    : 'Bus is live — updated moments ago',
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -558,16 +561,21 @@ class _StopsScreenState extends State<StopsScreen> {
         top: false,
         child: Row(
           children: [
-            ElevatedButton.icon(
-              onPressed: _openVoiceAssistant,
-              icon: const Icon(Icons.mic, size: 20),
-              label: Text(languageService.isTamil ? 'குரல் உதவி' : 'Voice Help'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0052CC),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(130, 48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _openVoiceAssistant,
+                icon: const Icon(Icons.mic, size: 20),
+                label: Text(
+                  languageService.isTamil ? 'குரல் உதவி' : 'Voice Help',
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0052CC),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
             ),
@@ -576,11 +584,14 @@ class _StopsScreenState extends State<StopsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () => _viewOnMap(),
                 icon: const Icon(Icons.map_outlined, size: 20),
-                label: Text(languageService.isTamil ? 'வரைபடத்தில் பார்க்க' : 'View on map'),
+                label: Text(
+                  languageService.isTamil ? 'வரைபடத்தில் பார்க்க' : 'View on map',
+                  overflow: TextOverflow.ellipsis,
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1E6BFF),
                   foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 48),
+                  minimumSize: const Size(0, 48),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),

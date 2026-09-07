@@ -193,9 +193,12 @@ class _ParentHomeState extends State<_ParentHome> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  languageService.isTamil ? 'உங்கள் குழந்தைகளின் பேருந்து' : 'Your Children\'s Buses',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                Expanded(
+                  child: Text(
+                    languageService.isTamil ? 'உங்கள் குழந்தைகளின் பேருந்து' : 'Your Children\'s Buses',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 if (busId.isNotEmpty)
                   IconButton(

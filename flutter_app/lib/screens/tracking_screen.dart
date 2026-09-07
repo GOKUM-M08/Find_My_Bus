@@ -8,7 +8,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
 import '../services/notification_service.dart';
-import '../services/language_service.dart';
 import '../widgets/voice_assistant_sheet.dart';
 
 // Palette matching home_screen.dart & main.dart
@@ -597,6 +596,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                               : (_busSpeed > 1
                                   ? 'Moving at ${_busSpeed.toStringAsFixed(0)} km/h'
                                   : 'Stopped at location'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
@@ -606,6 +607,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                         const SizedBox(height: 3),
                         Text(
                           widget.stopId != null ? 'ETA: $_eta • $_stopsAway stops away' : 'Updated few seconds ago',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.blueGrey,
