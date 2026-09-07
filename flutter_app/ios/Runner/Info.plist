@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Speech recognition for bus voice assistant</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Voice search for bus location and ETA</string>
 </dict>
 </plist>

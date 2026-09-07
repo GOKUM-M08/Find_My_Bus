@@ -40,14 +40,20 @@ class _FindBusScreenState extends State<FindBusScreen> {
   @override
   void initState() {
     super.initState();
+    languageService.addListener(_onLanguageChanged);
     _loadBrowseBuses();
   }
 
   @override
   void dispose() {
+    languageService.removeListener(_onLanguageChanged);
     _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadBrowseBuses() async {

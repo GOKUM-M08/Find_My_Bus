@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'tracking_screen.dart';
 import 'driver_screen.dart';
+import 'stops_screen.dart';
+import '../services/language_service.dart';
+import '../widgets/voice_assistant_sheet.dart';
 
 // Professional Blue Color Palette
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -49,8 +52,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _loading = false;
       });
     } catch (e) {
-      // No matching row in user_roles (or another fetch error) —
-      // show a clear message instead of spinning forever.
       setState(() {
         _role = '';
         _loading = false;
@@ -89,23 +90,62 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ─── PARENT HOME ────────────────────────────────────────────────
-class _ParentHome extends StatelessWidget {
+class _ParentHome extends StatefulWidget {
   final Map<String, dynamic> userData;
   final VoidCallback onLogout;
 
   const _ParentHome({required this.userData, required this.onLogout});
 
   @override
+  State<_ParentHome> createState() => _ParentHomeState();
+}
+
+class _ParentHomeState extends State<_ParentHome> {
+  final languageService = LanguageService();
+
+  @override
+  void initState() {
+    super.initState();
+    languageService.addListener(_onLanguageChanged);
+  }
+
+  @override
+  void dispose() {
+    languageService.removeListener(_onLanguageChanged);
+    super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final busId = widget.userData['bus_id']?.toString() ?? '';
+    final busNumber = widget.userData['buses']?['bus_number']?.toString() ?? 'N/A';
+    final schoolName = widget.userData['schools']?['name']?.toString() ?? '';
+
     return Scaffold(
       backgroundColor: BACKGROUND_BLUE,
       appBar: AppBar(
-        title: const Text('Find My Bus', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          languageService.getText('app_title'),
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: PRIMARY_BLUE,
         foregroundColor: Colors.white,
         elevation: 8,
         actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: onLogout),
+          // Language Switcher Button
+          TextButton.icon(
+            onPressed: () => languageService.toggleLanguage(),
+            icon: const Icon(Icons.language, color: Colors.white, size: 18),
+            label: Text(
+              languageService.isTamil ? 'தமிழ்' : 'EN',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+          IconButton(icon: const Icon(Icons.logout), onPressed: widget.onLogout),
         ],
       ),
       body: Padding(
@@ -133,11 +173,13 @@ class _ParentHome extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Good Morning!',
-                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(
+                    languageService.isTamil ? 'வணக்கம்!' : 'Good Morning!',
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
                   const SizedBox(height: 4),
                   Text(
-                    userData['schools']?['name'] ?? 'Your School',
+                    schoolName.isNotEmpty ? schoolName : 'Your School',
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -147,25 +189,63 @@ class _ParentHome extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 28),
-            const Text('Your Children\'s Buses',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  languageService.isTamil ? 'உங்கள் குழந்தைகளின் பேருந்து' : 'Your Children\'s Buses',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                if (busId.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.mic, color: PRIMARY_BLUE),
+                    tooltip: languageService.getText('voice_assistant_title'),
+                    onPressed: () => VoiceAssistantSheet.show(
+                      context,
+                      busId: busId,
+                      busNumber: busNumber,
+                      stopId: widget.userData['stop_id']?.toString(),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 12),
 
-            // Bus card — tap to track
+            // Bus card — tap to track or view stops
             _BusCard(
-              busNumber: userData['buses']?['bus_number'] ?? 'N/A',
-              driverName: userData['buses']?['driver_name'] ?? 'N/A',
+              busNumber: busNumber,
+              driverName: widget.userData['buses']?['driver_name'] ?? 'N/A',
               onTrack: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => TrackingScreen(
-                      busId: userData['bus_id'],
-                      busNumber: userData['buses']?['bus_number'] ?? '',
-                      stopId: userData['stop_id'],
+                      busId: busId,
+                      busNumber: busNumber,
+                      stopId: widget.userData['stop_id']?.toString(),
                     ),
                   ),
+                );
+              },
+              onStops: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StopsScreen(
+                      busId: busId,
+                      busNumber: busNumber,
+                      schoolName: schoolName,
+                    ),
+                  ),
+                );
+              },
+              onVoice: () {
+                VoiceAssistantSheet.show(
+                  context,
+                  busId: busId,
+                  busNumber: busNumber,
+                  stopId: widget.userData['stop_id']?.toString(),
                 );
               },
             ),
@@ -180,20 +260,26 @@ class _BusCard extends StatelessWidget {
   final String busNumber;
   final String driverName;
   final VoidCallback onTrack;
+  final VoidCallback onStops;
+  final VoidCallback onVoice;
 
   const _BusCard({
     required this.busNumber,
     required this.driverName,
     required this.onTrack,
+    required this.onStops,
+    required this.onVoice,
   });
 
   @override
   Widget build(BuildContext context) {
+    final languageService = LanguageService();
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: PRIMARY_BLUE.withOpacity(0.1),
@@ -202,40 +288,75 @@ class _BusCard extends StatelessWidget {
           )
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: LIGHT_BLUE,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.directions_bus,
-                color: PRIMARY_BLUE, size: 28),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: LIGHT_BLUE,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.directions_bus,
+                    color: PRIMARY_BLUE, size: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${languageService.getText('bus')} $busNumber',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    Text('Driver: $driverName',
+                        style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onVoice,
+                icon: const Icon(Icons.mic, color: PRIMARY_BLUE, size: 26),
+                tooltip: languageService.getText('voice_assistant_title'),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(busNumber,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
-                Text('Driver: $driverName',
-                    style: const TextStyle(color: Colors.grey, fontSize: 13)),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: PRIMARY_BLUE,
-              foregroundColor: Colors.white,
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: onTrack,
-            child: const Text('Track', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: PRIMARY_BLUE,
+                    side: const BorderSide(color: PRIMARY_BLUE),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: onStops,
+                  icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                  label: Text(
+                    languageService.getText('select_stop_notify'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: PRIMARY_BLUE,
+                  foregroundColor: Colors.white,
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: onTrack,
+                icon: const Icon(Icons.map, size: 18),
+                label: const Text('Track', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
           ),
         ],
       ),

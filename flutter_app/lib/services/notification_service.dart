@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Top-level background message handler for FCM.
 /// Must be outside any class and annotated with @pragma('vm:entry-point').
@@ -81,5 +82,38 @@ class NotificationService {
       debugPrint(
           '[FCM Subscription ERROR] Failed to subscribe to topic $topic: $e\nStack: $stack');
     }
+  }
+
+  /// Unsubscribes from the FCM topic for a specific bus and stop.
+  Future<void> unsubscribeFromStop(String busId, String stopId) async {
+    if (!_initialized) {
+      await initialize();
+    }
+    final topic = "bus_${busId}_stop_${stopId}";
+    try {
+      debugPrint('[FCM Unsubscribing] Topic: $topic');
+      await _fcm.unsubscribeFromTopic(topic);
+      debugPrint('[FCM Unsubscribed SUCCESS] Topic: $topic');
+    } catch (e, stack) {
+      debugPrint(
+          '[FCM Unsubscribe ERROR] Failed to unsubscribe from topic $topic: $e\nStack: $stack');
+    }
+  }
+
+  /// Gets local persisted selected stopId for a bus.
+  Future<String?> getSelectedStopId(String busId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('selected_stop_$busId');
+  }
+
+  /// Sets local persisted selected stopId for a bus, unsubscribes from old stop if any, and subscribes to new stop.
+  Future<void> switchSelectedStop(String busId, String newStopId) async {
+    final oldStopId = await getSelectedStopId(busId);
+    if (oldStopId != null && oldStopId != newStopId) {
+      await unsubscribeFromStop(busId, oldStopId);
+    }
+    await subscribeToStop(busId, newStopId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_stop_$busId', newStopId);
   }
 }

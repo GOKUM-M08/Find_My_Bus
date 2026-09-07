@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
 import '../services/notification_service.dart';
+import '../services/language_service.dart';
+import '../widgets/voice_assistant_sheet.dart';
 
 // Palette matching home_screen.dart & main.dart
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -510,12 +512,28 @@ class _TrackingScreenState extends State<TrackingScreen>
             ),
           ),
 
-          // Floating Map Camera Controls
+          // Floating Map Camera & Voice Controls
           Positioned(
             right: 14,
             top: 40,
             child: Column(
               children: [
+                FloatingActionButton.small(
+                  heroTag: 'voice_assistant_tracking',
+                  backgroundColor: PRIMARY_BLUE,
+                  foregroundColor: Colors.white,
+                  elevation: 4,
+                  onPressed: () {
+                    VoiceAssistantSheet.show(
+                      context,
+                      busId: widget.busId,
+                      busNumber: widget.busNumber,
+                      stopId: widget.stopId,
+                    );
+                  },
+                  child: const Icon(Icons.mic, size: 20),
+                ),
+                const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'recenter_bus',
                   backgroundColor: Colors.white,

@@ -17,6 +17,7 @@ app.add_middleware(
 
 # Include all route modules
 app.include_router(buses.router, prefix="/api/buses", tags=["Buses"])
+app.include_router(buses.router, prefix="/buses", tags=["Buses Direct"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(students.router, prefix="/api/students", tags=["Students"])
 app.include_router(schools.router, prefix="/api/schools", tags=["Schools"])
