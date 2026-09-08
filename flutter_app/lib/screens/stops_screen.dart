@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config.dart';
 import 'tracking_screen.dart';
 import '../services/notification_service.dart';
 import '../services/language_service.dart';
@@ -33,6 +36,7 @@ class _StopsScreenState extends State<StopsScreen> {
   int _currentStopIndex = -1; // -1 = unknown / not yet moving
   bool _busIsLive = false;
   String? _selectedNotifStopId;
+  String _tripDirection = 'morning';
   Timer? _refreshTimer;
 
   @override
@@ -100,7 +104,42 @@ class _StopsScreenState extends State<StopsScreen> {
 
   String str(dynamic val) => val?.toString() ?? '';
 
+  Future<void> _fetchTripDirection() async {
+    try {
+      final res = await http.get(Uri.parse('$kBackendBaseUrl/api/tracking/${widget.busId}/trip-direction'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        if (data['trip_direction'] != null && mounted) {
+          setState(() {
+            _tripDirection = data['trip_direction'];
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadStops() async {
+    await _fetchTripDirection();
+
+    try {
+      final res = await http.get(Uri.parse('$kBackendBaseUrl/api/buses/${widget.busId}/route'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        if (data is List && data.isNotEmpty && data[0]['stops'] != null) {
+          final stops = List<Map<String, dynamic>>.from(data[0]['stops']);
+          if (mounted) {
+            setState(() {
+              _stops = stops;
+              _loading = false;
+            });
+            await _refreshBusPosition();
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Fallback directly to Supabase and order based on active trip direction
     final routeResult = await supabase
         .from('routes')
         .select('id')
@@ -108,7 +147,7 @@ class _StopsScreenState extends State<StopsScreen> {
         .maybeSingle();
 
     if (routeResult == null) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       return;
     }
 
@@ -118,12 +157,19 @@ class _StopsScreenState extends State<StopsScreen> {
         .eq('route_id', routeResult['id'])
         .order('stop_order');
 
-    setState(() {
-      _stops = List<Map<String, dynamic>>.from(stopsResult).reversed.toList();
-      _loading = false;
-    });
+    List<Map<String, dynamic>> loadedStops = List<Map<String, dynamic>>.from(stopsResult);
+    if (_tripDirection == 'evening') {
+      loadedStops = loadedStops.reversed.toList();
+    }
 
-    await _refreshBusPosition();
+    if (mounted) {
+      setState(() {
+        _stops = loadedStops;
+        _loading = false;
+      });
+
+      await _refreshBusPosition();
+    }
   }
 
   Future<void> _refreshBusPosition() async {
@@ -306,6 +352,8 @@ class _StopsScreenState extends State<StopsScreen> {
                           ],
                         ),
                       ),
+
+                    _buildTripDirectionBanner(),
 
                     // Notification Stop Header Banner
                     Container(
@@ -594,12 +642,50 @@ class _StopsScreenState extends State<StopsScreen> {
                   minimumSize: const Size(0, 48),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTripDirectionBanner() {
+    final isEvening = _tripDirection == 'evening';
+    final label = isEvening
+        ? (languageService.isTamil ? 'மாலை பயணம் (இறக்கம்)' : 'Evening Trip (Drop-off)')
+        : (languageService.isTamil ? 'காலை பயணம் (ஏற்றம்)' : 'Morning Trip (Pickup)');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      margin: const EdgeInsets.only(top: 8, left: 12, right: 12),
+      decoration: BoxDecoration(
+        color: isEvening ? const Color(0xFFEEF2FF) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isEvening ? const Color(0xFFC7D2FE) : const Color(0xFFFDE68A),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isEvening ? Icons.nights_stay_rounded : Icons.wb_sunny_rounded,
+            color: isEvening ? const Color(0xFF4338CA) : const Color(0xFFD97706),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isEvening ? const Color(0xFF3730A3) : const Color(0xFF92400E),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from database import supabase, redis_client
 from pydantic import BaseModel
 from typing import Optional
-from routes.tracking import haversine_distance, get_eta
+from routes.tracking import haversine_distance, get_eta, get_ordered_stops
 
 router = APIRouter()
 
@@ -70,15 +70,18 @@ def create_route(route_data: RouteCreate):
 
 @router.get("/{bus_id}/route")
 def get_bus_route(bus_id: str):
-    """Get route and all stops for a specific bus."""
+    """Get route and all stops for a specific bus in active trip direction order."""
     try:
         if not supabase: return []
-        result = supabase.table("routes")\
-            .select("*, stops(*)")\
+        route_res = supabase.table("routes")\
+            .select("*")\
             .eq("bus_id", bus_id)\
-            .order("stop_order", foreign_table="stops")\
             .execute()
-        return result.data
+        if not route_res.data:
+            return []
+        route = route_res.data[0]
+        route["stops"] = get_ordered_stops(bus_id, route["id"])
+        return [route]
     except Exception:
         return []
 
@@ -117,12 +120,7 @@ def get_bus_location_summary(bus_id: str):
         if not supabase:
             return {"nearest_landmark": "location not available", "distance_km": 0.0}
 
-        route = supabase.table("routes").select("id").eq("bus_id", bus_id).execute()
-        if not route.data:
-            return {"nearest_landmark": "route not found", "distance_km": 0.0}
-        
-        route_id = route.data[0]["id"]
-        stops = supabase.table("stops").select("*").eq("route_id", route_id).order("stop_order").execute().data
+        stops = get_ordered_stops(bus_id)
 
         if not stops:
             return {"nearest_landmark": "unknown location", "distance_km": 0.0}
@@ -151,12 +149,7 @@ def get_eta_default(bus_id: str, stop_id: Optional[str] = None):
         if not supabase:
             return {"eta_minutes": 0, "eta": "Location not available", "stops_away": -1}
 
-        route = supabase.table("routes").select("id").eq("bus_id", bus_id).execute()
-        if not route.data:
-            return {"eta_minutes": 0, "eta": "Route not found", "stops_away": -1}
-        
-        route_id = route.data[0]["id"]
-        stops = supabase.table("stops").select("*").eq("route_id", route_id).order("stop_order").execute().data
+        stops = get_ordered_stops(bus_id)
 
         if not stops:
             return {"eta_minutes": 0, "eta": "Stops not found", "stops_away": -1}
