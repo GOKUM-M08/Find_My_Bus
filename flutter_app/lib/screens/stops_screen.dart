@@ -642,6 +642,8 @@ class _StopsScreenState extends State<StopsScreen> {
                   minimumSize: const Size(0, 48),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
             ),
           ],

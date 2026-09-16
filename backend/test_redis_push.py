@@ -11,7 +11,7 @@ Run from inside the backend/ folder:
 """
 from database import redis_client
 
-BUS_ID = "32d67973-8738-4d13-b012-a9c73b4b76e7"
+BUS_ID = "09b59e09-af90-4d4f-8e2f-44047c27b065"
 
 redis_client.hset(f"bus:{BUS_ID}", mapping={
     "latitude": 13.309097,

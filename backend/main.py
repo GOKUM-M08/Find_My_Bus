@@ -4,6 +4,8 @@ from routes import buses, tracking, students, schools, route_optimizer
 import asyncio
 import json
 from database import redis_client
+from routes import buses, tracking, students, schools, route_optimizer, gps
+app.include_router(gps.router, tags=["GPS Ingest"])
 
 app = FastAPI(title="BusTrack API", version="1.0.0")
 
