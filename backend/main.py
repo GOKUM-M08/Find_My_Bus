@@ -1,11 +1,9 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routes import buses, tracking, students, schools, route_optimizer
+from routes import buses, tracking, students, schools, route_optimizer, gps
 import asyncio
 import json
 from database import redis_client
-from routes import buses, tracking, students, schools, route_optimizer, gps
-app.include_router(gps.router, tags=["GPS Ingest"])
 
 app = FastAPI(title="BusTrack API", version="1.0.0")
 
@@ -24,6 +22,7 @@ app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(students.router, prefix="/api/students", tags=["Students"])
 app.include_router(schools.router, prefix="/api/schools", tags=["Schools"])
 app.include_router(route_optimizer.router, tags=["Route Optimizer"])
+app.include_router(gps.router, tags=["GPS Ingest"])
 
 # Store active WebSocket connections
 # Key: bus_id → List of connected parent WebSockets
