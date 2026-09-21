@@ -5,18 +5,26 @@ Receives position forwards from Traccar (running on the Azure VM) and
 writes them into Supabase, then triggers the existing broadcast pipeline
 in main.py (WebSocket push + parent stop-proximity checks).
 
-Traccar is configured (via traccar.xml) to POST here whenever a device
-sends a new GPS fix. Add to main.py with:
+Traccar is configured (via traccar.xml, forward.url) to substitute
+placeholders directly into a GET request's query string on every new
+GPS fix -- this is Traccar's built-in, well-documented forwarding
+method (see PositionForwarderUrl.java) and is more reliable than its
+JSON forwarding, which doesn't consistently include the device's
+uniqueId (IMEI).
+
+traccar.xml will be configured with something like:
+
+    <entry key='forward.enable'>true</entry>
+    <entry key='forward.url'>https://find-my-bus-teu4.onrender.com/traccar-forward?uniqueId={uniqueId}&amp;latitude={latitude}&amp;longitude={longitude}&amp;speed={speed}&amp;fixTime={fixTime}</entry>
+
+Add to main.py, AFTER `app = FastAPI(...)` is created:
 
     from traccar_forward import router as traccar_router
     app.include_router(traccar_router, tags=["Traccar Forward"])
 
-Traccar's forwarded payload can vary slightly by version/config, so this
-parses defensively and accepts any of these shapes:
-
-  1. {"device": {"uniqueId": "..."}, "position": {"latitude": .., "longitude": .., "speed": ..}}
-  2. {"uniqueId": "...", "latitude": .., "longitude": .., "speed": ..}   (flat)
-  3. {"deviceId": "...", "position": {...}}   (uses deviceId as fallback identifier)
+GET /traccar-forward is the real path Traccar hits.
+POST /traccar-forward is kept as a convenience for manual testing
+(e.g. curl with a JSON body) before the real tracker is outdoors.
 """
 
 from fastapi import APIRouter, Request, HTTPException
@@ -30,46 +38,20 @@ router = APIRouter()
 INTERNAL_BROADCAST_URL = "http://127.0.0.1:8000/internal/broadcast/{bus_id}"
 
 
-def _extract_identifier_and_position(payload: dict):
+async def _handle_position(unique_id, latitude, longitude, speed_raw, speed_unit: str = "knots"):
     """
-    Pulls (unique_id, position_dict) out of whatever shape Traccar sent.
-    Raises ValueError if required fields are missing.
+    Shared logic: match device -> write Supabase -> trigger broadcast.
+    speed_unit: "knots" (Traccar's default GET forwarding unit) or "kmh" (manual test convenience).
     """
-    device = payload.get("device") or {}
-    position = payload.get("position") or payload  # flat fallback
-
-    unique_id = (
-        device.get("uniqueId")
-        or payload.get("uniqueId")
-        or payload.get("deviceId")  # last resort, may be Traccar's internal numeric id
-    )
-
-    latitude = position.get("latitude")
-    longitude = position.get("longitude")
-    speed = position.get("speed", 0)
-
     if unique_id is None or latitude is None or longitude is None:
-        raise ValueError(f"Missing required fields in payload: {payload}")
+        return {"status": "ignored", "reason": "missing required fields"}
 
-    # Traccar reports speed in knots; convert to km/h for consistency with the rest of the app
     try:
-        speed_kmh = float(speed) * 1.852
+        speed_val = float(speed_raw) if speed_raw is not None else 0.0
     except (TypeError, ValueError):
-        speed_kmh = 0
+        speed_val = 0.0
 
-    return str(unique_id), float(latitude), float(longitude), speed_kmh
-
-
-@router.post("/traccar-forward")
-async def traccar_forward(request: Request):
-    payload = await request.json()
-
-    try:
-        unique_id, latitude, longitude, speed_kmh = _extract_identifier_and_position(payload)
-    except ValueError as e:
-        # Don't 500 on a malformed/unexpected Traccar payload — log and ack so Traccar doesn't retry-storm
-        print(f"[traccar_forward] bad payload: {e}")
-        return {"status": "ignored", "reason": "unparseable payload"}
+    speed_kmh = speed_val * 1.852 if speed_unit == "knots" else speed_val
 
     if supabase is None:
         raise HTTPException(status_code=500, detail="Supabase client not configured")
@@ -78,7 +60,7 @@ async def traccar_forward(request: Request):
     bus_result = (
         supabase.table("buses")
         .select("id, bus_number")
-        .eq("device_id", unique_id)
+        .eq("device_id", str(unique_id))
         .limit(1)
         .execute()
     )
@@ -96,9 +78,9 @@ async def traccar_forward(request: Request):
     supabase.table("live_location").upsert(
         {
             "bus_id": bus_id,
-            "device_id": unique_id,
-            "latitude": latitude,
-            "longitude": longitude,
+            "device_id": str(unique_id),
+            "latitude": float(latitude),
+            "longitude": float(longitude),
             "speed": speed_kmh,
             "timestamp": now,
         },
@@ -109,8 +91,8 @@ async def traccar_forward(request: Request):
     supabase.table("location_history").insert(
         {
             "bus_id": bus_id,
-            "latitude": latitude,
-            "longitude": longitude,
+            "latitude": float(latitude),
+            "longitude": float(longitude),
             "speed": speed_kmh,
             "recorded_at": now,
         }
@@ -121,10 +103,45 @@ async def traccar_forward(request: Request):
         try:
             await client.post(
                 INTERNAL_BROADCAST_URL.format(bus_id=bus_id),
-                json={"latitude": latitude, "longitude": longitude, "speed": speed_kmh},
+                json={"latitude": float(latitude), "longitude": float(longitude), "speed": speed_kmh},
                 timeout=5,
             )
         except httpx.HTTPError as e:
             print(f"[traccar_forward] internal broadcast failed: {e}")
 
     return {"status": "ok", "bus_id": bus_id, "bus_number": bus.get("bus_number")}
+
+
+@router.get("/traccar-forward")
+async def traccar_forward_get(
+    uniqueId: str = None,
+    latitude: float = None,
+    longitude: float = None,
+    speed: float = None,
+    fixTime: str = None,
+):
+    """
+    Real endpoint Traccar hits -- placeholders substituted into the query string.
+    Speed arrives in knots (Traccar's raw Position.speed unit).
+    """
+    return await _handle_position(uniqueId, latitude, longitude, speed, speed_unit="knots")
+
+
+@router.post("/traccar-forward")
+async def traccar_forward_post(request: Request):
+    """
+    Manual-testing convenience -- e.g.:
+    curl -X POST https://<render-url>/traccar-forward \
+      -H "Content-Type: application/json" \
+      -d '{"uniqueId": "862607228002920", "latitude": 13.322, "longitude": 80.151, "speed": 5}'
+
+    Speed here is treated as already km/h, since it's a human typing the test value.
+    """
+    payload = await request.json()
+    return await _handle_position(
+        payload.get("uniqueId"),
+        payload.get("latitude"),
+        payload.get("longitude"),
+        payload.get("speed", 0),
+        speed_unit="kmh",
+    )

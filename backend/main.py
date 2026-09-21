@@ -4,12 +4,10 @@ from routes import buses, tracking, students, schools, route_optimizer, gps
 import asyncio
 import json
 from database import redis_client
-from traccar_forward import router as traccar_router
-app.include_router(traccar_router, tags=["Traccar Forward"])
+from traccar_forward import router as traccar_router   # ← import is fine up here
 
-app = FastAPI(title="BusTrack API", version="1.0.0")
+app = FastAPI(title="BusTrack API", version="1.0.0")   # ← app created here
 
-# Allow Flutter and React to connect
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,7 +15,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include all route modules
 app.include_router(buses.router, prefix="/api/buses", tags=["Buses"])
 app.include_router(buses.router, prefix="/buses", tags=["Buses Direct"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
@@ -25,7 +22,7 @@ app.include_router(students.router, prefix="/api/students", tags=["Students"])
 app.include_router(schools.router, prefix="/api/schools", tags=["Schools"])
 app.include_router(route_optimizer.router, tags=["Route Optimizer"])
 app.include_router(gps.router, tags=["GPS Ingest"])
-
+app.include_router(traccar_router, tags=["Traccar Forward"])   # ← call goes down here, with the others
 # Store active WebSocket connections
 # Key: bus_id → List of connected parent WebSockets
 active_connections: dict = {}
