@@ -4,6 +4,8 @@ from routes import buses, tracking, students, schools, route_optimizer, gps
 import asyncio
 import json
 from database import redis_client
+from traccar_forward import router as traccar_router
+app.include_router(traccar_router, tags=["Traccar Forward"])
 
 app = FastAPI(title="BusTrack API", version="1.0.0")
 
