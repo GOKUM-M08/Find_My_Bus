@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../widgets/admin_drawer.dart';
 import 'config.dart';
 
 const Color kPrimaryBlue = Color(0xFF0052CC);
@@ -24,10 +25,8 @@ class RouteProfileScreen extends StatefulWidget {
 }
 
 class _RouteProfileScreenState extends State<RouteProfileScreen> {
-  late TextEditingController _trafficController;
   late TextEditingController _breakersController;
   late TextEditingController _narrowController;
-  late TextEditingController _qualityController;
   late TextEditingController _speedController;
   late TextEditingController _peakController;
 
@@ -61,24 +60,45 @@ class _RouteProfileScreenState extends State<RouteProfileScreen> {
   }
 
   double? _computeDifficulty() {
-    if (_trafficLevel == null &&
-        _breakersController.text.isEmpty &&
-        _narrowController.text.isEmpty &&
-        _roadQuality == null) {
-      return null;
+    final int? breakers = int.tryParse(_breakersController.text.trim());
+    final int? narrow = int.tryParse(_narrowController.text.trim());
+
+    double weightedSum = 0.0;
+    double totalWeight = 0.0;
+
+    if (_trafficLevel != null) {
+      double tVal = _trafficLevel == 'high'
+          ? 90.0
+          : (_trafficLevel == 'medium' ? 50.0 : 10.0);
+      weightedSum += 0.30 * tVal;
+      totalWeight += 0.30;
     }
 
-    double tVal = _trafficLevel == 'high'
-        ? 90
-        : (_trafficLevel == 'medium' ? 50 : 10);
-    double bVal = (int.tryParse(_breakersController.text) ?? 0) * 10.0;
-    double nVal = (int.tryParse(_narrowController.text) ?? 0) * 25.0;
-    double qVal =
-        _roadQuality == 'poor' ? 90 : (_roadQuality == 'moderate' ? 50 : 10);
+    if (breakers != null) {
+      double bVal = (breakers * 10.0).clamp(0.0, 100.0);
+      weightedSum += 0.25 * bVal;
+      totalWeight += 0.25;
+    }
 
-    double diff =
-        0.30 * tVal + 0.25 * bVal.clamp(0, 100) + 0.25 * nVal.clamp(0, 100) + 0.20 * qVal;
-    return diff.clamp(0, 100);
+    if (narrow != null) {
+      double nVal = (narrow * 25.0).clamp(0.0, 100.0);
+      weightedSum += 0.25 * nVal;
+      totalWeight += 0.25;
+    }
+
+    if (_roadQuality != null) {
+      double qVal = _roadQuality == 'poor'
+          ? 90.0
+          : (_roadQuality == 'moderate' ? 50.0 : 10.0);
+      weightedSum += 0.20 * qVal;
+      totalWeight += 0.20;
+    }
+
+    if (totalWeight == 0.0) return null;
+
+    // Renormalize weights so missing fields are NOT treated as zero.
+    double diff = weightedSum / totalWeight;
+    return diff.clamp(0.0, 100.0);
   }
 
   Future<void> _saveCondition() async {
@@ -142,6 +162,11 @@ class _RouteProfileScreenState extends State<RouteProfileScreen> {
 
     return Scaffold(
       backgroundColor: kBackgroundSlate,
+      drawer: AdminDrawer(
+        schoolId: widget.route['school_id']?.toString() ?? '',
+        schoolName: routeName,
+        currentRoute: 'routes',
+      ),
       appBar: AppBar(
         backgroundColor: kPrimaryBlue,
         foregroundColor: Colors.white,
@@ -164,13 +189,17 @@ class _RouteProfileScreenState extends State<RouteProfileScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      routeName,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: kTextPrimary),
+                    Expanded(
+                      child: Text(
+                        routeName,
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: kTextPrimary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
@@ -183,7 +212,7 @@ class _RouteProfileScreenState extends State<RouteProfileScreen> {
                       child: Text(
                         difficulty != null
                             ? 'Difficulty: ${difficulty.toStringAsFixed(0)}/100'
-                            : 'Difficulty: Unentered',
+                            : 'Difficulty: Not Configured',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../widgets/admin_drawer.dart';
 import 'route_optimizer_screen.dart';
 
 // Speed threshold above which a bus is flagged as overspeeding.
@@ -155,13 +155,67 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   int get _overspeedingCount =>
       _buses.where((b) => b['is_overspeeding'] == true).length;
+  int get _liveCount =>
+      _buses.where((b) => b['is_live'] == true).length;
+  int get _offlineCount =>
+      _buses.where((b) => b['is_live'] != true).length;
+
+  Widget _buildStatusSummaryHeader() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      color: Colors.white,
+      child: Row(
+        children: [
+          _buildSummaryChip('Fleet Total', '${_buses.length}', Icons.directions_bus_rounded, const Color(0xFF0052CC)),
+          const SizedBox(width: 8),
+          _buildSummaryChip('Live Active', '$_liveCount', Icons.sensors_rounded, const Color(0xFF10B981)),
+          const SizedBox(width: 8),
+          _buildSummaryChip('Overspeed', '$_overspeedingCount', Icons.speed_rounded, const Color(0xFFEF4444)),
+          const SizedBox(width: 8),
+          _buildSummaryChip('Offline', '$_offlineCount', Icons.signal_wifi_off_rounded, const Color(0xFF64748B)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryChip(String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 12, color: color),
+                const SizedBox(width: 4),
+                Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade700), textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F5F9),
+      backgroundColor: const Color(0xFFF7F9FC),
+      drawer: AdminDrawer(
+        schoolId: widget.schoolId,
+        schoolName: widget.schoolName,
+        currentRoute: 'dashboard',
+      ),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E6BFF),
+        backgroundColor: const Color(0xFF0052CC),
         foregroundColor: Colors.white,
         elevation: 0,
         title: Column(
@@ -170,13 +224,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const Text('Admin Dashboard',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             Text(widget.schoolName,
-                style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                style: const TextStyle(fontSize: 12, color: Colors.white70)),
           ],
         ),
         actions: [
           IconButton(
             tooltip: 'Route Optimizer',
-            icon: const Icon(Icons.route_outlined),
+            icon: const Icon(Icons.auto_awesome),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => RouteOptimizerScreen(
                 schoolId: widget.schoolId,
@@ -191,7 +245,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0052CC)))
           : _errorMessage != null
               ? _buildErrorState()
               : _buses.isEmpty
@@ -201,6 +255,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     )
                   : Column(
                       children: [
+                        _buildStatusSummaryHeader(),
                         if (_overspeedingCount > 0) _buildOverspeedBanner(),
                         Expanded(
                           child: ListView.builder(
@@ -323,197 +378,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
     );
   }
-
-  Widget _buildBusCard(Map<String, dynamic> bus) {
-    final isOverspeeding = bus['is_overspeeding'] == true;
-    final isLive = bus['is_live'] == true;
-    final speed = bus['speed'] as double?;
-    final capacity = bus['capacity'] ?? 0;
-    final childrenCount = bus['children_count'] ?? 0;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: isOverspeeding ? Border.all(color: Colors.red, width: 2) : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              width: 5,
-              decoration: BoxDecoration(
-                color: isOverspeeding
-                    ? Colors.red
-                    : (isLive ? Colors.green : Colors.grey.shade400),
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(12),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (isOverspeeding)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 6, horizontal: 12),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        borderRadius:
-                            BorderRadius.vertical(top: Radius.circular(10)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.warning_amber_rounded,
-                              color: Colors.white, size: 16),
-                          const SizedBox(width: 6),
-                          Text(
-                            'OVERSPEEDING — ${speed!.toStringAsFixed(0)} km/h',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                bus['bus_number'] ?? '',
-                                style: const TextStyle(
-                                    fontSize: 17, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            _LiveDot(isLive: isLive),
-                            const SizedBox(width: 6),
-                            Text(
-                              isLive
-                                  ? '${speed?.toStringAsFixed(0) ?? '--'} km/h'
-                                  : 'Offline',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: isLive ? Colors.green : Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (bus['driver_name'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Row(
-                              children: [
-                                Text(
-                                  'Driver: ${bus['driver_name']}',
-                                  style: const TextStyle(
-                                      color: Colors.grey, fontSize: 13),
-                                ),
-                                if (bus['driver_phone'] != null) ...[
-                                  const SizedBox(width: 8),
-                                  TextButton.icon(
-                                    onPressed: () => launchUrl(Uri.parse(
-                                        'tel:${bus['driver_phone']}')),
-                                    icon: const Icon(Icons.call_outlined,
-                                        size: 17),
-                                    label: Text('Call ${bus['driver_name']}'),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: const Color(0xFF1E6BFF),
-                                      minimumSize: const Size(40, 40),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10),
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        const Divider(height: 20),
-                        GridView.count(
-                          crossAxisCount: 2,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          childAspectRatio: 2.6,
-                          mainAxisSpacing: 4,
-                          children: [
-                            _StatItem(
-                              icon: Icons.groups_outlined,
-                              label: 'Children',
-                              value: '$childrenCount / $capacity',
-                            ),
-                            _StatItem(
-                              icon: Icons.place_outlined,
-                              label: 'Stops',
-                              value: '${bus['stops_count']}',
-                            ),
-                            _StatItem(
-                              icon: Icons.local_gas_station_outlined,
-                              label: 'Tank Capacity',
-                              value: bus['diesel_tank_capacity'] != null
-                                  ? '${bus['diesel_tank_capacity']} L'
-                                  : 'Not set',
-                            ),
-                            _StatItem(
-                              icon: Icons.speed_outlined,
-                              label: 'Mileage',
-                              value: bus['mileage_kmpl'] != null
-                                  ? '${bus['mileage_kmpl']} km/L'
-                                  : 'Not set',
-                            ),
-                          ],
-                        ),
-                        // Extra feature: occupancy indicator
-                        if (capacity > 0) ...[
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: LinearProgressIndicator(
-                              value: (childrenCount / capacity).clamp(0, 1),
-                              minHeight: 6,
-                              backgroundColor: Colors.grey.shade200,
-                              color: childrenCount >= capacity
-                                  ? Colors.red
-                                  : const Color(0xFF1E6BFF),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${((childrenCount / capacity) * 100).clamp(0, 100).toStringAsFixed(0)}% occupied',
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.grey),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _LiveDot extends StatelessWidget {
@@ -528,54 +392,6 @@ class _LiveDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: isLive ? Colors.green : Colors.grey.shade400,
         shape: BoxShape.circle,
-      ),
-    );
-  }
-}
-
-class _StatItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _StatItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(right: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E6BFF).withOpacity(0.06),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: const Color(0xFF1E6BFF)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

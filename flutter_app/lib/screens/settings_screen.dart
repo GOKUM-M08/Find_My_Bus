@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/language_service.dart';
+import '../widgets/admin_drawer.dart';
 
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
 const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
@@ -30,6 +31,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         return Scaffold(
           backgroundColor: BACKGROUND_BLUE,
+          drawer: const AdminDrawer(
+            schoolId: '',
+            schoolName: 'System Settings',
+            currentRoute: 'settings',
+          ),
           appBar: AppBar(
             backgroundColor: PRIMARY_BLUE,
             foregroundColor: Colors.white,

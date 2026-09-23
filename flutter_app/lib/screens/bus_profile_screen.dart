@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../widgets/admin_drawer.dart';
 import 'config.dart';
 
 const Color kPrimaryBlue = Color(0xFF0052CC);
@@ -192,9 +193,8 @@ class _BusProfileScreenState extends State<BusProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final busLabel = widget.bus['label'] ?? widget.bus['bus_number'] ?? 'Bus Profile';
-    final capacity = widget.bus['capacity'] ?? 40;
-    final mileage = widget.bus['mileage_kmpl'] ?? 4.0;
-    final condition = widget.bus['condition_score'] ?? 1.0;
+    final capacity = widget.bus['capacity'];
+    final capacityLabel = capacity != null ? 'Capacity: $capacity Seats' : 'Capacity: Not Configured';
 
     String suitSummary = 'Suitable for urban arterial routes.';
     if (_busType == 'large') {
@@ -207,6 +207,11 @@ class _BusProfileScreenState extends State<BusProfileScreen> {
 
     return Scaffold(
       backgroundColor: kBackgroundSlate,
+      drawer: AdminDrawer(
+        schoolId: widget.bus['school_id']?.toString() ?? '',
+        schoolName: busLabel,
+        currentRoute: 'buses',
+      ),
       appBar: AppBar(
         backgroundColor: kPrimaryBlue,
         foregroundColor: Colors.white,
@@ -229,21 +234,25 @@ class _BusProfileScreenState extends State<BusProfileScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      busLabel,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: kTextPrimary),
-                    ),
-                    Chip(
-                      backgroundColor: kLightBlue,
-                      label: Text(
-                        'Capacity: $capacity Seats',
+                    Expanded(
+                      child: Text(
+                        busLabel,
                         style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: kTextPrimary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Chip(
+                      backgroundColor: capacity != null ? kLightBlue : Colors.grey.shade100,
+                      label: Text(
+                        capacityLabel,
+                        style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: kPrimaryBlue),
+                            color: capacity != null ? kPrimaryBlue : kTextSecondary),
                       ),
                     ),
                   ],

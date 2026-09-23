@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../widgets/admin_drawer.dart';
 
 class RegisterStudentScreen extends StatefulWidget {
   final String schoolId;
@@ -83,6 +84,11 @@ class _RegisterStudentScreenState extends State<RegisterStudentScreen> {
     }
 
     return Scaffold(
+      drawer: AdminDrawer(
+        schoolId: widget.schoolId,
+        schoolName: 'Student Registration',
+        currentRoute: 'students',
+      ),
       appBar: AppBar(
         title: const Text('Register Your Child'),
         backgroundColor: const Color(0xFF1E6BFF),

@@ -139,9 +139,9 @@ async def check_and_flip_trip_direction(bus_id: str, bus_lat: float, bus_lon: fl
             redis_client.set(already_flipped_key, "1", ex=3600)  # debounce for 1 hour
             print(f"[Trip Direction] Bus {bus_id} reached final stop, switched {current_direction} -> {new_direction}")
     else:
-        # bus has moved away from that final stop — clear debounce so a
-        # future arrival at the same stop can flip again next day
-        redis_client.delete(already_flipped_key)
+        # bus has moved away from final stop — clear debounce keys for both terminal stops
+        redis_client.delete(f"bus:{bus_id}:flipped_at_{stops[-1]['id']}")
+        redis_client.delete(f"bus:{bus_id}:flipped_at_{stops[0]['id']}")
 
 
 @router.get("/{bus_id}/trip-direction")

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'config.dart';
+import '../widgets/admin_drawer.dart';
 import 'route_management_screen.dart';
 import 'bus_profile_screen.dart';
 import 'route_profile_screen.dart';
@@ -205,6 +206,11 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackgroundSlate,
+      drawer: AdminDrawer(
+        schoolId: widget.schoolId,
+        schoolName: widget.schoolName,
+        currentRoute: 'optimizer',
+      ),
       appBar: _buildAppBar(),
       body: Column(
         children: [
@@ -468,11 +474,14 @@ class _RouteOptimizerScreenState extends State<RouteOptimizerScreen>
             children: [
               const Icon(Icons.compare_arrows_rounded, color: kSecondaryBlue, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'Baseline vs. Optimized Comparison',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: kTextPrimary),
+              const Expanded(
+                child: Text(
+                  'Baseline vs. Optimized Comparison',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: kTextPrimary),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(

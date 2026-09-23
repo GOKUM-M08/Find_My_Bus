@@ -119,15 +119,21 @@ def _label(row: dict[str, Any], primary: str, fallback: str) -> str:
 
 @router.get("/admin/optimize-routes")
 def optimize_routes(
-    w_cost: float = Query(0.35, ge=0),
-    w_time: float = Query(0.25, ge=0),
-    w_capacity: float = Query(0.20, ge=0),
-    w_condition: float = Query(0.10, ge=0),
-    w_compatibility: float = Query(0.10, ge=0),
+    w_cost: Optional[float] = Query(0.35, ge=0),
+    w_time: Optional[float] = Query(0.25, ge=0),
+    w_capacity: Optional[float] = Query(0.20, ge=0),
+    w_condition: Optional[float] = Query(0.10, ge=0),
+    w_compatibility: Optional[float] = Query(0.10, ge=0),
     school_id: Optional[str] = Query(None, description="Optional school scope for an admin"),
 ):
     """Assign each available bus and route once using the Hungarian algorithm."""
-    weights = np.array([w_cost, w_time, w_capacity, w_condition, w_compatibility], dtype=float)
+    wc = float(w_cost) if w_cost is not None else 0.35
+    wt = float(w_time) if w_time is not None else 0.25
+    wcap = float(w_capacity) if w_capacity is not None else 0.20
+    wcond = float(w_condition) if w_condition is not None else 0.10
+    wcomp = float(w_compatibility) if w_compatibility is not None else 0.10
+
+    weights = np.array([wc, wt, wcap, wcond, wcomp], dtype=float)
     if float(weights.sum()) <= 0:
         raise HTTPException(422, "At least one optimization weight must be greater than zero.")
     weights /= weights.sum()
@@ -306,7 +312,7 @@ def optimize_routes(
 
 @router.put("/admin/routes/{route_id}/condition")
 def update_route_condition(route_id: str, data: dict[str, Any] = Body(...)):
-    """Admin updates manually-entered route condition parameters."""
+    """Admin updates manually-entered route condition parameters safely."""
     allowed_keys = {
         "traffic_level",
         "num_speed_breakers",
@@ -315,24 +321,73 @@ def update_route_condition(route_id: str, data: dict[str, Any] = Body(...)):
         "avg_speed_kmph",
         "peak_congestion_window",
     }
-    update_data = {k: v for k, v in data.items() if k in allowed_keys}
-    if not update_data:
+    raw_data = {k: v for k, v in data.items() if k in allowed_keys}
+    if not raw_data:
         raise HTTPException(400, "No valid route condition fields provided")
 
-    result = supabase.table("routes").update(update_data).eq("id", route_id).execute()
-    return {"status": "success", "data": result.data}
+    update_data = {}
+    valid_traffic = {"low", "medium", "high"}
+    valid_quality = {"good", "moderate", "poor"}
+
+    for key, val in raw_data.items():
+        if val == "" or val is None:
+            update_data[key] = None
+        elif key in ("num_speed_breakers", "num_narrow_road_sections"):
+            try:
+                update_data[key] = int(val)
+            except (ValueError, TypeError):
+                update_data[key] = None
+        elif key == "avg_speed_kmph":
+            try:
+                update_data[key] = float(val)
+            except (ValueError, TypeError):
+                update_data[key] = None
+        elif key == "traffic_level":
+            val_str = str(val).lower().strip()
+            update_data[key] = val_str if val_str in valid_traffic else None
+        elif key == "road_quality":
+            val_str = str(val).lower().strip()
+            update_data[key] = val_str if val_str in valid_quality else None
+        else:
+            update_data[key] = str(val) if val else None
+
+    try:
+        result = supabase.table("routes").update(update_data).eq("id", route_id).execute()
+        return {"status": "success", "data": result.data}
+    except Exception as e:
+        raise HTTPException(400, f"Failed to update route condition: {str(e)}")
 
 
 @router.put("/admin/buses/{bus_id}/attributes")
 def update_bus_attributes(bus_id: str, data: dict[str, Any] = Body(...)):
     """Admin updates bus attributes (bus_type, age_years, suitable_for_narrow_roads)."""
     allowed_keys = {"bus_type", "age_years", "suitable_for_narrow_roads"}
-    update_data = {k: v for k, v in data.items() if k in allowed_keys}
-    if not update_data:
+    raw_data = {k: v for k, v in data.items() if k in allowed_keys}
+    if not raw_data:
         raise HTTPException(400, "No valid bus attribute fields provided")
 
-    result = supabase.table("buses").update(update_data).eq("id", bus_id).execute()
-    return {"status": "success", "data": result.data}
+    update_data = {}
+    valid_bus_types = {"large", "medium", "small"}
+
+    for key, val in raw_data.items():
+        if val == "" or val is None:
+            update_data[key] = None
+        elif key == "age_years":
+            try:
+                update_data[key] = int(val)
+            except (ValueError, TypeError):
+                update_data[key] = None
+        elif key == "suitable_for_narrow_roads":
+            update_data[key] = bool(val)
+        elif key == "bus_type":
+            val_str = str(val).lower().strip()
+            update_data[key] = val_str if val_str in valid_bus_types else None
+
+    try:
+        result = supabase.table("buses").update(update_data).eq("id", bus_id).execute()
+        return {"status": "success", "data": result.data}
+    except Exception as e:
+        raise HTTPException(400, f"Failed to update bus attributes: {str(e)}")
 
 
 # ─── PHASE 3: WHAT-IF SIMULATION & APPROVAL WORKFLOW ENDPOINTS ──────

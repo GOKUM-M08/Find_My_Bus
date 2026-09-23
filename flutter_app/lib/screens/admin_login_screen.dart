@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_dashboard_screen.dart';
 
-// NOTE: This is a demo-only login — the credentials below are
-// hardcoded and checked on the phone itself, not verified against a
-// real account system. Fine for a pilot/demo, but before handling a
-// real school's data this should move to a proper authenticated
-// admin account (e.g. a Supabase Auth user with an 'admin' row in
-// user_roles, same pattern already used for drivers).
-const String _demoAdminSchoolId = 'RMK school';
-const String _demoAdminPassword = 'rmkcet@1128';
+const Color kPrimaryBlue = Color(0xFF0052CC);
+const Color kBackgroundSlate = Color(0xFFF7F9FC);
+const Color kTextPrimary = Color(0xFF0F172A);
+const Color kTextSecondary = Color(0xFF64748B);
+const Color kDangerRed = Color(0xFFEF4444);
 
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
@@ -20,77 +17,125 @@ class AdminLoginScreen extends StatefulWidget {
 
 class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final supabase = Supabase.instance.client;
-  final _schoolIdController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _loading = false;
   bool _obscurePassword = true;
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _login() async {
-    final schoolIdInput = _schoolIdController.text.trim();
+    final emailInput = _emailController.text.trim();
     final passwordInput = _passwordController.text;
 
-    if (schoolIdInput != _demoAdminSchoolId ||
-        passwordInput != _demoAdminPassword) {
+    if (emailInput.isEmpty || passwordInput.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid School ID or password')),
+        const SnackBar(
+          content: Text('Please enter both Admin Email and Password.'),
+          backgroundColor: kDangerRed,
+        ),
       );
       return;
     }
 
-   
     setState(() => _loading = true);
+
     try {
+      // 1. Authenticate against Supabase Auth
+      final authResponse = await supabase.auth.signInWithPassword(
+        email: emailInput,
+        password: passwordInput,
+      );
 
-    // Fetch all schools and match client-side (trimmed, case-insensitive)
-    // instead of relying on an exact database-side match — this is more
-    // forgiving of stray whitespace or formatting differences in the
-    // stored name that wouldn't be visible just by eyeballing it.
-    final allSchools = await supabase.from('schools').select('id, name');
-
-    Map<String, dynamic>? school;
-    for (final row in allSchools) {
-      final storedName = (row['name'] as String).trim().toLowerCase();
-      if (storedName == schoolIdInput.toLowerCase()) {
-        school = row;
-        break;
+      final user = authResponse.user;
+      if (user == null) {
+        throw const AuthException('Authentication failed: No user context returned.');
       }
-    }
 
-    if (school == null) {
+      // 2. Query user_roles table for user_id = user.id
+      final roleRow = await supabase
+          .from('user_roles')
+          .select('role, school_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (roleRow == null || roleRow['role'] != 'admin') {
+        // Revoke active session if role is not admin
+        await supabase.auth.signOut();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Access denied: User account is not an authorized School Admin.'),
+            backgroundColor: kDangerRed,
+          ),
+        );
+        return;
+      }
+
+      final schoolId = roleRow['school_id'] as String?;
+      if (schoolId == null || schoolId.isEmpty) {
+        await supabase.auth.signOut();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Access denied: No school ID assigned to this admin account.'),
+            backgroundColor: kDangerRed,
+          ),
+        );
+        return;
+      }
+
+      // 3. Fetch school metadata from schools table
+      final schoolRow = await supabase
+          .from('schools')
+          .select('name')
+          .eq('id', schoolId)
+          .maybeSingle();
+
+      final schoolName = (schoolRow != null && schoolRow['name'] != null)
+          ? (schoolRow['name'] as String).trim()
+          : 'School Admin Console';
+
       if (!mounted) return;
-      final availableNames =
-          allSchools.map((s) => '"${s['name']}"').join(', ');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No school matched "$schoolIdInput". '
-            'Found in database: $availableNames',
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AdminDashboardScreen(
+            schoolId: schoolId,
+            schoolName: schoolName,
           ),
         ),
       );
-      return;
-    }    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AdminDashboardScreen(
-          schoolId: school!['id'],
-          schoolName: school['name'],
+    } on AuthException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Authentication failed: ${error.message}'),
+          backgroundColor: kDangerRed,
         ),
-      ),
-    );
+      );
     } on PostgrestException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not access schools: ${error.message}')),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not connect to the server. Please try again.')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Database verification error: ${error.message}'),
+          backgroundColor: kDangerRed,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sign in error: $e'),
+          backgroundColor: kDangerRed,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -99,12 +144,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F5F9),
+      backgroundColor: kBackgroundSlate,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E6BFF),
+        backgroundColor: kPrimaryBlue,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Admin Login'),
+        title: const Text('Admin Security Portal'),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -112,24 +157,33 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.admin_panel_settings,
-                  size: 64, color: Color(0xFF1E6BFF)),
+              const Icon(
+                Icons.admin_panel_settings_rounded,
+                size: 64,
+                color: kPrimaryBlue,
+              ),
               const SizedBox(height: 16),
               const Text(
-                'School Admin',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                'School Admin Authentication',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: kTextPrimary,
+                ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               const Text(
-                'Sign in to manage your school\'s buses',
-                style: TextStyle(color: Colors.grey),
+                'Sign in with your registered admin credentials',
+                style: TextStyle(color: kTextSecondary, fontSize: 13),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
               TextField(
-                controller: _schoolIdController,
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  labelText: 'School ID',
-                  prefixIcon: const Icon(Icons.school_outlined),
+                  labelText: 'Admin Email',
+                  prefixIcon: const Icon(Icons.email_outlined),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -146,8 +200,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     icon: Icon(_obscurePassword
                         ? Icons.visibility_off
                         : Icons.visibility),
-                    onPressed: () => setState(
-                        () => _obscurePassword = !_obscurePassword),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -160,7 +214,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 child: ElevatedButton(
                   onPressed: _loading ? null : _login,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E6BFF),
+                    backgroundColor: kPrimaryBlue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -174,7 +228,13 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           child: CircularProgressIndicator(
                               color: Colors.white, strokeWidth: 2),
                         )
-                      : const Text('Login'),
+                      : const Text(
+                          'Authenticate & Sign In',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ],

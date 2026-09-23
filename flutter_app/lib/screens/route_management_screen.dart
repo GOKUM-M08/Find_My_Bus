@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../widgets/admin_drawer.dart';
 import 'config.dart';
 import 'route_profile_screen.dart';
 
@@ -67,6 +68,11 @@ class _RouteManagementScreenState extends State<RouteManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackgroundSlate,
+      drawer: AdminDrawer(
+        schoolId: widget.schoolId,
+        schoolName: 'Route Control',
+        currentRoute: 'routes',
+      ),
       appBar: AppBar(
         backgroundColor: kPrimaryBlue,
         foregroundColor: Colors.white,
@@ -82,7 +88,9 @@ class _RouteManagementScreenState extends State<RouteManagementScreen> {
                   itemBuilder: (context, index) {
                     final r = _routes[index] as Map<String, dynamic>;
                     final name = r['label'] ?? r['route_name'] ?? 'Route #${index + 1}';
-                    final traffic = r['traffic_level'] ?? 'Unentered';
+                    final rawTraffic = r['traffic_level'];
+                    final trafficLabel = rawTraffic != null ? rawTraffic.toString().toUpperCase() : 'NOT CONFIGURED';
+                    final isConfigured = rawTraffic != null;
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -101,7 +109,40 @@ class _RouteManagementScreenState extends State<RouteManagementScreen> {
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 16),
                         ),
-                        subtitle: Text('Traffic: $traffic'),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isConfigured
+                                      ? (rawTraffic == 'high'
+                                          ? const Color(0xFFFEE2E2)
+                                          : (rawTraffic == 'medium'
+                                              ? const Color(0xFFFEF3C7)
+                                              : const Color(0xFFD1FAE5)))
+                                      : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Traffic: $trafficLabel',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isConfigured
+                                        ? (rawTraffic == 'high'
+                                            ? const Color(0xFFDC2626)
+                                            : (rawTraffic == 'medium'
+                                                ? const Color(0xFFD97706)
+                                                : const Color(0xFF059669)))
+                                        : kTextSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () async {
                           final updated = await Navigator.push(

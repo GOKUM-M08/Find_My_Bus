@@ -17,6 +17,7 @@ bustrack/
 ├── backend/            FastAPI server
 │   ├── main.py
 │   ├── gps_listener.py     TCP listener for AIS 140 GPS devices
+│   ├── traccar_forward.py  HTTP endpoint for Traccar-forwarded GT06 positions
 │   ├── database.py         Supabase + Redis clients
 │   ├── notifications.py    Firebase push notification sender
 │   ├── models.py
@@ -135,6 +136,59 @@ this same thing):
 - **`admin_panel/package.json`, `public/index.html`, `src/index.js`** — the
   guide only gives the `npx create-react-app` command, not these files
   directly. Standard Create React App boilerplate.
+
+## Traccar integration (GT06 hardware path)
+
+The guide's `gps_listener.py` expects a raw TCP AIS140-style feed, but
+Render's web service only exposes HTTP(S), not raw TCP — so that listener
+can't run as-is on Render. Instead, GPS hardware (Gomy LT02G, GT06
+protocol) connects to a self-hosted **Traccar** server on an Azure VM,
+which is configured to forward each position on to the backend over HTTP.
+This entire path is new — not part of the original guide.
+
+- **`backend/traccar_forward.py`** — new file, not from the guide. Defines
+  `GET /traccar-forward`, which Traccar hits directly using its
+  `forward.url` placeholder substitution (`{uniqueId}`, `{latitude}`,
+  `{longitude}`, `{speed}`, `{fixTime}` — no JSON body). Looks up the bus
+  by `device_id` in `buses`, converts speed from knots to km/h, and writes
+  to `live_location` / `location_history`, same as `/gps/ingest` does.
+  Also keeps a `POST /traccar-forward` for manual curl testing with fake
+  positions before wiring up real hardware.
+- **`main.py`** — added `app.include_router(traccar_router, ...)`, placed
+  *after* `app = FastAPI(...)` is created (an earlier ordering mistake
+  here caused a `NameError` on deploy — worth remembering if this file
+  gets refactored).
+- **Traccar server (Azure VM `find-my-bus-ip`, static IP
+  `172.198.58.39`)** — `/opt/traccar/conf/traccar.xml` has forwarding
+  enabled:
+  ```xml
+  <entry key='forward.enable'>true</entry>
+  <entry key='forward.url'>https://find-my-bus-teu4.onrender.com/traccar-forward?uniqueId={uniqueId}&amp;latitude={latitude}&amp;longitude={longitude}&amp;speed={speed}&amp;fixTime={fixTime}</entry>
+  ```
+  Runs as a `systemctl` service (`traccar.service`), independent of any
+  browser/portal session, so it stays up even after closing the Azure
+  Run Command tab.
+- **Device registration** — bus 394 (`RMKCET-394`,
+  `09b59e09-af90-4d4f-8e2f-44047c27b065`) has `device_id` set to the
+  tracker's IMEI, `862607228002920`, in the `buses` table. The tracker
+  itself is registered in Traccar under this same IMEI.
+- **Hardware connection info sent to Gomy** (LT02G unit, GT06 protocol):
+  server IP `172.198.58.39`, port `5023`.
+- **End-to-end test confirmed working** via manual GET request
+  (case-sensitive params — `uniqueId` and `fixTime` must match exactly,
+  and `fixTime` needs an uppercase `T`/`Z`, e.g.
+  `2026-09-21T16:45:00Z`):
+  ```
+  curl "https://find-my-bus-teu4.onrender.com/traccar-forward?uniqueId=862607228002920&latitude=13.107253&longitude=79.922789&speed=5&fixTime=2026-09-21T16:45:00Z"
+  ```
+  Returns `{"status":"ok","bus_id":"...","bus_number":"RMKCET-394"}` on
+  success, or `{"status":"ignored","reason":"unknown device_id"}` /
+  `{"status":"ignored","reason":"missing required fields"}` if the
+  device_id or param names/casing don't match.
+- **Remaining step**: get the physical tracker outdoors for a GPS fix and
+  confirm Traccar shows it online, Render logs show a forwarded request
+  coming from Traccar itself (not a manual curl), and bus 394 updates on
+  the map with a real position.
 
 ## What's untouched from the guide
 
