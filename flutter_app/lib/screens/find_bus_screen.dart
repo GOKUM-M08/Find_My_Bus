@@ -3,13 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 import 'stops_screen.dart';
-import 'admin_login_screen.dart';
 import 'profile_screen.dart';
 import 'faq_screen.dart';
 import 'suggest_feature_screen.dart';
 import 'about_screen.dart';
 import 'privacy_screen.dart';
-import 'settings_screen.dart';
 import '../services/language_service.dart';
 
 // Colors from main.dart
@@ -388,34 +386,18 @@ class _FindBusScreenState extends State<FindBusScreen> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            Expanded(
-              child: _BottomBarButton(
-                icon: Icons.admin_panel_settings_outlined,
-                label: languageService.getText('admin_login'),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
-                  );
-                },
-              ),
-            ),
-            Container(width: 1, height: 40, color: Colors.grey.shade200),
-            Expanded(
-              child: _BottomBarButton(
-                icon: Icons.badge_outlined,
-                label: languageService.getText('driver_login'),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  );
-                },
-              ),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: _BottomBarButton(
+            icon: Icons.badge_outlined,
+            label: languageService.getText('driver_login'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -556,19 +538,6 @@ class _FindBusScreenState extends State<FindBusScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const PrivacyScreen()),
-              );
-            },
-          ),
-
-          // 🎨 Theme & Settings
-          _DrawerItem(
-            icon: Icons.palette_outlined,
-            label: languageService.getText('theme_settings'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
               );
             },
           ),

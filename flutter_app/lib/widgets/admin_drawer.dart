@@ -93,10 +93,19 @@ class AdminDrawer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const CircleAvatar(
-                    backgroundColor: Colors.white24,
-                    radius: 24,
-                    child: Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset(
+                      'assets/icon/icon.png',
+                      height: 44,
+                      width: 44,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const CircleAvatar(
+                        backgroundColor: Colors.white24,
+                        radius: 22,
+                        child: Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Text(

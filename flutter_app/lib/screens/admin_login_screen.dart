@@ -149,14 +149,25 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
-                    Icons.admin_panel_settings_rounded,
-                    size: 56,
-                    color: kPrimaryBlue,
+                  Center(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.asset(
+                        'assets/icon/icon.png',
+                        height: 64,
+                        width: 64,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.admin_panel_settings_rounded,
+                          size: 56,
+                          color: kPrimaryBlue,
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'School Admin Login',
+                    'Find My Bus Admin Console',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 22,

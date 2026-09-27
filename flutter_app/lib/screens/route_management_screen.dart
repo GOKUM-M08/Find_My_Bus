@@ -379,30 +379,68 @@ class _RouteManagementScreenState extends State<RouteManagementScreen> {
                           if (isEdit) {
                             routeId = existingRoute['id'];
                             await supabase.from('routes').update(payload).eq('id', routeId);
-                            // Delete existing stops and re-insert
-                            await supabase.from('stops').delete().eq('route_id', routeId);
+
+                            // 1. Identify IDs of stops kept in the form
+                            final currentFormStopIds = stops
+                                .where((s) => s['id'] != null)
+                                .map((s) => s['id'].toString())
+                                .toSet();
+
+                            // 2. Safely handle stops removed from the form
+                            final originalStops = List<Map<String, dynamic>>.from(existingRoute['stops'] ?? []);
+                            for (final origStop in originalStops) {
+                              final origId = origStop['id']?.toString();
+                              if (origId != null && !currentFormStopIds.contains(origId)) {
+                                // Unlink students assigned to this stop before deleting it
+                                await supabase.from('students').update({'stop_id': null}).eq('stop_id', origId);
+                                await supabase.from('stops').delete().eq('id', origId);
+                              }
+                            }
+
+                            // 3. Update existing stops in-place and insert new stops
+                            for (int i = 0; i < stops.length; i++) {
+                              final s = stops[i];
+                              final stopPayload = {
+                                'route_id': routeId,
+                                'stop_name': s['stop_name'].toString().trim(),
+                                'latitude': (s['latitude'] as num).toDouble(),
+                                'longitude': (s['longitude'] as num).toDouble(),
+                                'stop_order': i + 1,
+                                'expected_time': s['expected_time']?.toString().trim(),
+                              };
+
+                              if (s['id'] != null) {
+                                await supabase.from('stops').update(stopPayload).eq('id', s['id']);
+                              } else {
+                                final newRes = await supabase.from('stops').insert(stopPayload).select();
+                                if (newRes.isNotEmpty) {
+                                  s['id'] = newRes[0]['id'];
+                                }
+                              }
+                            }
+
                             await _logAudit('UPDATE_ROUTE', routeId, 'Updated route ${routeNameCtrl.text.trim()} (Breakers: ${speedBreakerCtrl.text}, Turns: ${sharpTurnCtrl.text}, Traffic: $selectedTrafficLevel)');
                           } else {
                             final insertPayload = {...payload, 'school_id': widget.schoolId};
                             final res = await supabase.from('routes').insert(insertPayload).select();
                             routeId = res[0]['id'];
+
+                            final stopsPayload = stops.asMap().entries.map((e) {
+                              final idx = e.key;
+                              final s = e.value;
+                              return {
+                                'route_id': routeId,
+                                'stop_name': s['stop_name'].toString().trim(),
+                                'latitude': (s['latitude'] as num).toDouble(),
+                                'longitude': (s['longitude'] as num).toDouble(),
+                                'stop_order': idx + 1,
+                                'expected_time': s['expected_time']?.toString().trim(),
+                              };
+                            }).toList();
+
+                            await supabase.from('stops').insert(stopsPayload);
                             await _logAudit('CREATE_ROUTE', routeId, 'Created route ${routeNameCtrl.text.trim()}');
                           }
-
-                          final stopsPayload = stops.asMap().entries.map((e) {
-                            final idx = e.key;
-                            final s = e.value;
-                            return {
-                              'route_id': routeId,
-                              'stop_name': s['stop_name'].toString().trim(),
-                              'latitude': (s['latitude'] as num).toDouble(),
-                              'longitude': (s['longitude'] as num).toDouble(),
-                              'stop_order': idx + 1,
-                              'expected_time': s['expected_time']?.toString().trim(),
-                            };
-                          }).toList();
-
-                          await supabase.from('stops').insert(stopsPayload);
 
                           if (mounted) {
                             Navigator.pop(ctx);

@@ -323,7 +323,7 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet>
                           Icon(Icons.directions_bus, color: Colors.white, size: 18),
                           SizedBox(width: 6),
                           Text(
-                            'Bus Track Voice',
+                            'Find My Bus Voice',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
