@@ -4,9 +4,6 @@ import 'admin_dashboard_screen.dart';
 
 const Color kPrimaryBlue = Color(0xFF0052CC);
 const Color kBackgroundSlate = Color(0xFFF7F9FC);
-const Color kTextPrimary = Color(0xFF0F172A);
-const Color kTextSecondary = Color(0xFF64748B);
-const Color kDangerRed = Color(0xFFEF4444);
 
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
@@ -16,12 +13,14 @@ class AdminLoginScreen extends StatefulWidget {
 }
 
 class _AdminLoginScreenState extends State<AdminLoginScreen> {
-  final supabase = Supabase.instance.client;
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final supabase = Supabase.instance.client;
 
   bool _loading = false;
   bool _obscurePassword = true;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -31,23 +30,17 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+
     final emailInput = _emailController.text.trim();
     final passwordInput = _passwordController.text;
 
-    if (emailInput.isEmpty || passwordInput.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter both Admin Email and Password.'),
-          backgroundColor: kDangerRed,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _loading = true);
-
     try {
-      // 1. Authenticate against Supabase Auth
       final authResponse = await supabase.auth.signInWithPassword(
         email: emailInput,
         password: passwordInput,
@@ -55,10 +48,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
       final user = authResponse.user;
       if (user == null) {
-        throw const AuthException('Authentication failed: No user context returned.');
+        throw const AuthException('Authentication failed. No user context returned.');
       }
 
-      // 2. Query user_roles table for user_id = user.id
       final roleRow = await supabase
           .from('user_roles')
           .select('role, school_id')
@@ -66,32 +58,16 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           .maybeSingle();
 
       if (roleRow == null || roleRow['role'] != 'admin') {
-        // Revoke active session if role is not admin
         await supabase.auth.signOut();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Access denied: User account is not an authorized School Admin.'),
-            backgroundColor: kDangerRed,
-          ),
-        );
-        return;
+        throw const AuthException('Access Denied: Your account is not authorized as a School Admin.');
       }
 
       final schoolId = roleRow['school_id'] as String?;
       if (schoolId == null || schoolId.isEmpty) {
         await supabase.auth.signOut();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Access denied: No school ID assigned to this admin account.'),
-            backgroundColor: kDangerRed,
-          ),
-        );
-        return;
+        throw const AuthException('Access Denied: No school assigned to this admin account.');
       }
 
-      // 3. Fetch school metadata from schools table
       final schoolRow = await supabase
           .from('schools')
           .select('name')
@@ -112,32 +88,30 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           ),
         ),
       );
-    } on AuthException catch (error) {
+    } on AuthException catch (e) {
       if (!mounted) return;
+      setState(() {
+        _errorMessage = e.message;
+        _loading = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Authentication failed: ${error.message}'),
-          backgroundColor: kDangerRed,
-        ),
-      );
-    } on PostgrestException catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Database verification error: ${error.message}'),
-          backgroundColor: kDangerRed,
+          content: Text(_errorMessage!),
+          backgroundColor: Colors.red,
         ),
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Login failed: ${e.toString()}';
+        _loading = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sign in error: $e'),
-          backgroundColor: kDangerRed,
+          content: Text(_errorMessage!),
+          backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -146,98 +120,135 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     return Scaffold(
       backgroundColor: kBackgroundSlate,
       appBar: AppBar(
+        title: const Text('Admin Console Login'),
         backgroundColor: kPrimaryBlue,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Admin Security Portal'),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.admin_panel_settings_rounded,
-                size: 64,
-                color: kPrimaryBlue,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'School Admin Authentication',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: kTextPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Sign in with your registered admin credentials',
-                style: TextStyle(color: kTextSecondary, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'Admin Email',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 420),
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 15,
+                  offset: const Offset(0, 4),
+                )
+              ],
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 56,
+                    color: kPrimaryBlue,
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(_obscurePassword
-                        ? Icons.visibility_off
-                        : Icons.visibility),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryBlue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'School Admin Login',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2),
-                        )
-                      : const Text(
-                          'Authenticate & Sign In',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Sign in to manage your school transport fleet',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 24),
+                  if (_errorMessage != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red, fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Admin Email *',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Please enter your admin email address';
+                      }
+                      if (!val.contains('@') || !val.contains('.')) {
+                        return 'Please enter a valid email address';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Password *',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.isEmpty) {
+                        return 'Please enter your password';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _loading ? null : _login,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimaryBlue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: _loading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Sign In to Admin Console',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                           ),
-                        ),
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

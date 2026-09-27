@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../screens/admin_dashboard_screen.dart';
+import '../screens/bus_profile_screen.dart';
 import '../screens/route_management_screen.dart';
-import '../screens/route_optimizer_screen.dart';
 import '../screens/register_student_screen.dart';
+import '../screens/fuel_mileage_screen.dart';
+import '../screens/route_optimizer_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/admin_login_screen.dart';
 
 const Color kPrimaryBlue = Color(0xFF0052CC);
-const Color kSecondaryBlue = Color(0xFF1E6BFF);
-const Color kLightBlue = Color(0xFFE8F0FE);
-const Color kTextPrimary = Color(0xFF0F172A);
-const Color kTextSecondary = Color(0xFF64748B);
+const Color kDarkBlue = Color(0xFF00338C);
 
 class AdminDrawer extends StatelessWidget {
   final String schoolId;
@@ -23,235 +24,198 @@ class AdminDrawer extends StatelessWidget {
     required this.currentRoute,
   });
 
-  void _navigateTo(BuildContext context, Widget screen, String routeName) {
+  void _navigate(BuildContext context, Widget screen, String routeName) {
+    if (currentRoute == routeName) {
+      Navigator.pop(context); // Close drawer if already on target screen
+      return;
+    }
     Navigator.pop(context); // Close drawer
-    if (currentRoute == routeName) return; // Already on this screen
-
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => screen),
     );
   }
 
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to log out of the Admin Console?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await Supabase.instance.client.auth.signOut();
+      if (context.mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
+          (route) => false,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
+    final adminEmail = user?.email ?? 'admin@school.edu';
+
     return Drawer(
-      backgroundColor: Colors.white,
       child: Column(
         children: [
-          // Header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 48, 16, 20),
+          DrawerHeader(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [kPrimaryBlue, Color(0xFF00338C)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+                colors: [kPrimaryBlue, kDarkBlue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.directions_bus_rounded,
-                          color: Colors.white, size: 24),
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircleAvatar(
+                    backgroundColor: Colors.white24,
+                    radius: 24,
+                    child: Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    schoolName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'BusTrack Admin',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          Text(
-                            schoolName,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 12,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    adminEmail,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ),
-
-          // Menu Items
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+              padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                _DrawerTile(
-                  icon: Icons.map_rounded,
-                  label: 'Dashboard',
-                  subtitle: 'Live fleet overview & warnings',
-                  isSelected: currentRoute == 'dashboard',
-                  onTap: () => _navigateTo(
-                    context,
-                    AdminDashboardScreen(
-                      schoolId: schoolId,
-                      schoolName: schoolName,
-                    ),
-                    'dashboard',
-                  ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.dashboard_rounded,
+                  label: 'Dashboard Overview',
+                  route: 'dashboard',
+                  screen: AdminDashboardScreen(schoolId: schoolId, schoolName: schoolName),
                 ),
-                _DrawerTile(
-                  icon: Icons.directions_bus_filled_rounded,
-                  label: 'Buses',
-                  subtitle: 'Fleet list & vehicle profile',
-                  isSelected: currentRoute == 'buses',
-                  onTap: () => _navigateTo(
-                    context,
-                    AdminDashboardScreen(
-                      schoolId: schoolId,
-                      schoolName: schoolName,
-                    ),
-                    'dashboard',
-                  ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.directions_bus_rounded,
+                  label: 'Bus Fleet Management',
+                  route: 'buses',
+                  screen: BusProfileScreen(schoolId: schoolId, schoolName: schoolName),
                 ),
-                _DrawerTile(
+                _buildNavItem(
+                  context,
                   icon: Icons.alt_route_rounded,
-                  label: 'Routes',
-                  subtitle: 'Route builder & road metrics',
-                  isSelected: currentRoute == 'routes',
-                  onTap: () => _navigateTo(
-                    context,
-                    RouteManagementScreen(schoolId: schoolId),
-                    'routes',
-                  ),
+                  label: 'Route Builder & Buses',
+                  route: 'routes',
+                  screen: RouteManagementScreen(schoolId: schoolId, schoolName: schoolName),
                 ),
-                _DrawerTile(
-                  icon: Icons.auto_awesome_rounded,
-                  label: 'Route Optimizer',
-                  subtitle: 'Hungarian algorithm & grid',
-                  isSelected: currentRoute == 'optimizer',
-                  onTap: () => _navigateTo(
-                    context,
-                    RouteOptimizerScreen(
-                      schoolId: schoolId,
-                      schoolName: schoolName,
-                    ),
-                    'optimizer',
-                  ),
-                ),
-                _DrawerTile(
+                _buildNavItem(
+                  context,
                   icon: Icons.school_rounded,
-                  label: 'Students',
-                  subtitle: 'Bus & stop registration',
-                  isSelected: currentRoute == 'students',
-                  onTap: () => _navigateTo(
-                    context,
-                    RegisterStudentScreen(schoolId: schoolId),
-                    'students',
-                  ),
+                  label: 'Student Transport List',
+                  route: 'students',
+                  screen: RegisterStudentScreen(schoolId: schoolId, schoolName: schoolName),
                 ),
-                _DrawerTile(
+                _buildNavItem(
+                  context,
+                  icon: Icons.local_gas_station_rounded,
+                  label: 'Fuel & Mileage Tracking',
+                  route: 'fuel',
+                  screen: FuelMileageScreen(schoolId: schoolId, schoolName: schoolName),
+                ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.auto_awesome_rounded,
+                  label: 'Route Optimizer Engine',
+                  route: 'optimizer',
+                  screen: RouteOptimizerScreen(schoolId: schoolId, schoolName: schoolName),
+                ),
+                const Divider(height: 24),
+                _buildNavItem(
+                  context,
                   icon: Icons.settings_rounded,
-                  label: 'Settings',
-                  subtitle: 'System health & support',
-                  isSelected: currentRoute == 'settings',
-                  onTap: () => _navigateTo(
-                    context,
-                    const SettingsScreen(),
-                    'settings',
-                  ),
+                  label: 'Settings & Audit Logs',
+                  route: 'settings',
+                  screen: SettingsScreen(schoolId: schoolId, schoolName: schoolName),
                 ),
               ],
             ),
           ),
-
-          // Footer
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
             ),
-            child: const Row(
-              children: [
-                Icon(Icons.verified_user_rounded,
-                    size: 16, color: kSecondaryBlue),
-                SizedBox(width: 8),
-                Text(
-                  'Enterprise Fleet Control',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: kTextSecondary),
-                ),
-              ],
+            child: ListTile(
+              leading: const Icon(Icons.logout_rounded, color: Colors.red),
+              title: const Text('Log Out', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              onTap: () => _logout(context),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _DrawerTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _DrawerTile({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildNavItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String route,
+    required Widget screen,
+  }) {
+    final selected = currentRoute == route;
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: isSelected ? kLightBlue : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
+        color: selected ? kPrimaryBlue.withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
       ),
       child: ListTile(
-        leading: Icon(
-          icon,
-          color: isSelected ? kPrimaryBlue : kTextSecondary,
-          size: 22,
-        ),
+        leading: Icon(icon, color: selected ? kPrimaryBlue : Colors.grey.shade700),
         title: Text(
           label,
           style: TextStyle(
             fontSize: 14,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? kPrimaryBlue : kTextPrimary,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+            color: selected ? kPrimaryBlue : Colors.grey.shade800,
           ),
         ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: 10,
-            color: isSelected ? kPrimaryBlue.withValues(alpha: 0.8) : kTextSecondary,
-          ),
-        ),
-        onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        onTap: () => _navigate(context, screen, route),
       ),
     );
   }

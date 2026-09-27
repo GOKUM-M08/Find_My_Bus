@@ -152,6 +152,17 @@ def get_trip_direction(bus_id: str):
     return {"trip_direction": direction}
 
 
+@router.post("/{bus_id}/trip-direction")
+def set_trip_direction(bus_id: str, payload: dict):
+    """Admin manual override for bus trip direction ('morning' or 'evening')."""
+    direction = payload.get("trip_direction", "morning").lower()
+    if direction not in ("morning", "evening"):
+        direction = "morning"
+    redis_client.set(f"bus:{bus_id}:trip_direction", direction)
+    return {"status": "success", "bus_id": bus_id, "trip_direction": direction}
+
+
+
 @router.get("/{bus_id}/ordered-stops")
 def get_stops_in_direction_order(bus_id: str):
     """Get route stops in current trip direction order."""

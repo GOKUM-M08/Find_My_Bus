@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from unittest.mock import MagicMock, patch
-from routes.route_optimizer import update_route_condition, update_bus_attributes
+from routes.route_optimizer import update_route_condition
 
 class TestRouteConditionUpdate(unittest.TestCase):
 
@@ -16,7 +16,7 @@ class TestRouteConditionUpdate(unittest.TestCase):
         # Payload with empty strings
         data = {
             "traffic_level": "",
-            "num_speed_breakers": "",
+            "speed_breaker_count": "",
             "num_narrow_road_sections": "",
             "road_quality": "",
             "avg_speed_kmph": "",
@@ -29,7 +29,7 @@ class TestRouteConditionUpdate(unittest.TestCase):
         # Verify update call received None for empty strings instead of ""
         expected_update = {
             "traffic_level": None,
-            "num_speed_breakers": None,
+            "speed_breaker_count": None,
             "num_narrow_road_sections": None,
             "road_quality": None,
             "avg_speed_kmph": None,
@@ -43,7 +43,7 @@ class TestRouteConditionUpdate(unittest.TestCase):
 
         data = {
             "traffic_level": "medium",
-            "num_speed_breakers": "5",
+            "speed_breaker_count": "5",
             "num_narrow_road_sections": "2",
             "road_quality": "good",
             "avg_speed_kmph": "35.5"
@@ -54,7 +54,7 @@ class TestRouteConditionUpdate(unittest.TestCase):
 
         expected_update = {
             "traffic_level": "medium",
-            "num_speed_breakers": 5,
+            "speed_breaker_count": 5,
             "num_narrow_road_sections": 2,
             "road_quality": "good",
             "avg_speed_kmph": 35.5

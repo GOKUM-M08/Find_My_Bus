@@ -1,21 +1,26 @@
-"""Explainable, globally optimal bus-to-route recommendations with fleet analytics."""
+"""Explainable, globally optimal bus-to-route recommendations with fleet analytics & Gemini LLM explanations."""
 
 from __future__ import annotations
 
+import os
+import json
+import logging
 from typing import Any, Optional
 import numpy as np
+import requests
 from fastapi import APIRouter, HTTPException, Query, Body
 from scipy.optimize import linear_sum_assignment
 
 from database import supabase
 
+logger = logging.getLogger("uvicorn")
 router = APIRouter()
 
 DEFAULT_MILEAGE_KMPL = 4.0
 DEFAULT_DIESEL_PRICE_PER_L = 90.0
-DEFAULT_TRAFFIC_INDEX = 1.0
 FREE_FLOW_SPEED_KMPH = 40.0
 DIESEL_CO2_KG_PER_L = 2.68
+OPERATIONAL_DAYS_PER_MONTH = 22
 
 
 def _number(value: Any, default: float) -> float:
@@ -25,6 +30,48 @@ def _number(value: Any, default: float) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
+
+
+def compute_effective_distance(route: dict[str, Any]) -> float:
+    """
+    Exact Adjusted Effective Distance Formula (D_eff):
+    D_eff = (raw_distance + (0.15 * speed_breaker_count) + (0.10 * sharp_turn_count)) * traffic_multiplier * road_quality_multiplier
+
+    Weights & Multipliers:
+    - Traffic level: low = 1.0 (0%), medium = 1.15 (+15%), high = 1.30 (+30%)
+    - Speed breakers: +0.15 km effective distance penalty per breaker
+    - Sharp turns: +0.10 km effective distance penalty per turn
+    - Road quality: good = 1.0 (0%), average/moderate = 1.10 (+10%), poor = 1.25 (+25%)
+    """
+    raw_distance = _number(route.get("distance_km"), 1.0)
+
+    # Speed breaker count
+    breakers = route.get("speed_breaker_count")
+    if breakers is None:
+        breakers = 0.0
+    else:
+        try:
+            breakers = float(breakers)
+        except (ValueError, TypeError):
+            breakers = 0.0
+
+    sharp_turns = 0.0
+    if route.get("sharp_turn_count") is not None:
+        try:
+            sharp_turns = float(route.get("sharp_turn_count"))
+        except (ValueError, TypeError):
+            sharp_turns = 0.0
+
+    traffic_str = str(route.get("traffic_level") or "medium").lower().strip()
+    traffic_mult_map = {"low": 1.0, "medium": 1.15, "high": 1.30}
+    traffic_mult = traffic_mult_map.get(traffic_str, 1.15)
+
+    quality_str = str(route.get("road_quality") or "average").lower().strip()
+    quality_mult_map = {"good": 1.0, "average": 1.10, "moderate": 1.10, "poor": 1.25}
+    quality_mult = quality_mult_map.get(quality_str, 1.10)
+
+    effective_dist = (raw_distance + (0.15 * breakers) + (0.10 * sharp_turns)) * traffic_mult * quality_mult
+    return round(float(effective_dist), 2)
 
 
 def _unit_score(values: np.ndarray) -> np.ndarray:
@@ -40,7 +87,6 @@ def _capacity_fit(capacity: float, students: float) -> tuple[float, str, bool]:
     if students <= 0:
         return (0.35, "No passenger data", True)
     if capacity < students:
-        # Overcapacity is ineligible
         return (max(0.0, 0.30 * capacity / students), "Overcapacity", False)
     excess_ratio = (capacity - students) / students
     score = max(0.0, 1.0 - excess_ratio)
@@ -54,27 +100,17 @@ def _capacity_fit(capacity: float, students: float) -> tuple[float, str, bool]:
 
 
 def _compute_route_difficulty(route: dict[str, Any]) -> float | None:
-    """Computes a 0-100 route difficulty score from admin-entered fields.
-
-    Weights:
-    - traffic_level (30%): low=10, medium=50, high=90
-    - num_speed_breakers (25%): min(100, count * 10)
-    - num_narrow_road_sections (25%): min(100, count * 25)
-    - road_quality (20%): good=10, moderate=50, poor=90
-
-    Returns None if no condition data has been manually entered by an admin.
-    """
+    """Computes a 0-100 route difficulty score from admin-entered fields."""
     traffic = route.get("traffic_level")
-    breakers = route.get("num_speed_breakers")
-    narrow = route.get("num_narrow_road_sections")
+    breakers = route.get("speed_breaker_count")
+    narrow = route.get("sharp_turn_count") or route.get("num_narrow_road_sections")
     quality = route.get("road_quality")
 
-    # If all fields are null/unentered, return None (never guess numbers)
     if traffic is None and breakers is None and narrow is None and quality is None:
         return None
 
     traffic_map = {"low": 10.0, "medium": 50.0, "high": 90.0}
-    quality_map = {"good": 10.0, "moderate": 50.0, "poor": 90.0}
+    quality_map = {"good": 10.0, "average": 50.0, "moderate": 50.0, "poor": 90.0}
 
     traffic_score = traffic_map.get(str(traffic).lower(), 30.0) if traffic else 30.0
     breaker_score = min(100.0, float(breakers) * 10.0) if breakers is not None else 0.0
@@ -92,8 +128,8 @@ def _compute_compatibility(bus: dict[str, Any], route: dict[str, Any], difficult
 
     bus_type = str(bus.get("bus_type") or "medium").lower()
     narrow_suitable = bool(bus.get("suitable_for_narrow_roads", False))
-    narrow_sections = route.get("num_narrow_road_sections") or 0
-    speed_breakers = route.get("num_speed_breakers") or 0
+    narrow_sections = route.get("sharp_turn_count") or route.get("num_narrow_road_sections") or 0
+    speed_breakers = route.get("speed_breaker_count") or 0
     age = bus.get("age_years") or 0
 
     score = 1.0
@@ -117,6 +153,58 @@ def _label(row: dict[str, Any], primary: str, fallback: str) -> str:
     return str(row.get(primary) or row.get(fallback) or "Unnamed")
 
 
+def call_gemini_api_for_explanation(payload_json: dict) -> str:
+    """
+    Calls Google Gemini Flash API to phrase structured pre-calculated optimization results into plain English.
+    STRICT CONSTRAINT: Gemini is forbidden from calculating, altering, or modifying any numbers.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or api_key == "your_gemini_api_key_here":
+        logger.info("[Gemini API] GEMINI_API_KEY not configured in backend/.env — using deterministic fallback explanation.")
+        return payload_json.get("fallback_explanation", "Deterministic recommendation generated.")
+
+    prompt_text = (
+        "IMPORTANT: You are an AI assistant explaining school bus fleet optimizer recommendations for school administrators.\n"
+        "STRICT CONSTRAINT: You must ONLY phrase the provided pre-calculated numbers and facts into a clear, concise, natural plain-English summary (2-3 sentences max).\n"
+        "YOU MUST NEVER CALCULATE, ALTER, INVENT, OR MODIFY ANY NUMBERS YOURSELF. Rely strictly on the exact numbers provided in the JSON payload.\n\n"
+        f"PRE-CALCULATED STRUCTURED PAYLOAD:\n{json.dumps(payload_json, indent=2)}\n\n"
+        "Plain-English Summary:"
+    )
+
+    logger.info(f"[Gemini API Request] Sending structured payload to Gemini Flash API:\n{json.dumps(payload_json)}")
+
+    # Try gemini-2.5-flash endpoint, fallback to gemini-1.5-flash
+    models = ["gemini-2.5-flash", "gemini-1.5-flash"]
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "contents": [{"parts": [{"text": prompt_text}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 150}
+        }
+        try:
+            res = requests.post(url, headers=headers, json=body, timeout=8)
+            if res.status_code == 200:
+                res_data = res.json()
+                text = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                logger.info(f"[Gemini API Response] Received explanation from {model}:\n{text}")
+                return text
+            else:
+                logger.warning(f"[Gemini API] Model {model} returned HTTP {res.status_code}: {res.text}")
+        except Exception as e:
+            logger.error(f"[Gemini API Error] Failed call to {model}: {e}")
+
+    logger.info("[Gemini API Fallback] API calls unsuccessful — returning deterministic template phrasing.")
+    return payload_json.get("fallback_explanation", "Deterministic recommendation generated.")
+
+
+def _parse_weight(w, default: float) -> float:
+    if w is None:
+        return default
+    if hasattr(w, "default"):
+        return float(w.default) if w.default is not None else default
+    return float(w)
+
 @router.get("/admin/optimize-routes")
 def optimize_routes(
     w_cost: Optional[float] = Query(0.35, ge=0),
@@ -126,12 +214,12 @@ def optimize_routes(
     w_compatibility: Optional[float] = Query(0.10, ge=0),
     school_id: Optional[str] = Query(None, description="Optional school scope for an admin"),
 ):
-    """Assign each available bus and route once using the Hungarian algorithm."""
-    wc = float(w_cost) if w_cost is not None else 0.35
-    wt = float(w_time) if w_time is not None else 0.25
-    wcap = float(w_capacity) if w_capacity is not None else 0.20
-    wcond = float(w_condition) if w_condition is not None else 0.10
-    wcomp = float(w_compatibility) if w_compatibility is not None else 0.10
+    """Assign each available bus and route once using the Hungarian algorithm and effective route distances."""
+    wc = _parse_weight(w_cost, 0.35)
+    wt = _parse_weight(w_time, 0.25)
+    wcap = _parse_weight(w_capacity, 0.20)
+    wcond = _parse_weight(w_condition, 0.10)
+    wcomp = _parse_weight(w_compatibility, 0.10)
 
     weights = np.array([wc, wt, wcap, wcond, wcomp], dtype=float)
     if float(weights.sum()) <= 0:
@@ -155,12 +243,14 @@ def optimize_routes(
             "routes": [{"id": r.get("id"), "label": _label(r, "route_name", "id")} for r in routes],
             "total_diesel_cost": 0.0,
             "total_co2_kg": 0.0,
+            "monthly_savings_inr": 0.0,
             "unassigned_bus_count": len(buses),
             "unassigned_route_count": len(routes),
+            "ai_insights_summary": "No active buses or routes found to optimize.",
             "comparison": {
-                "before": {"diesel_cost": 0.0, "co2_kg": 0.0},
-                "after": {"diesel_cost": 0.0, "co2_kg": 0.0},
-                "improvement": {"cost_savings_pct": 0.0, "co2_reduction_pct": 0.0},
+                "before": {"diesel_cost": 0.0, "co2_kg": 0.0, "monthly_cost": 0.0},
+                "after": {"diesel_cost": 0.0, "co2_kg": 0.0, "monthly_cost": 0.0},
+                "improvement": {"cost_savings_pct": 0.0, "co2_reduction_pct": 0.0, "monthly_savings_inr": 0.0},
             },
         }
 
@@ -172,6 +262,7 @@ def optimize_routes(
     capacity_labels: list[list[str]] = [["" for _ in routes] for _ in buses]
     eligible_matrix = np.ones((n_buses, n_routes), dtype=bool)
 
+    route_effective_distances = [compute_effective_distance(r) for r in routes]
     route_difficulties = [_compute_route_difficulty(r) for r in routes]
     compatibility_scores = np.zeros((n_buses, n_routes), dtype=float)
 
@@ -181,14 +272,13 @@ def optimize_routes(
         capacity = _number(bus.get("capacity"), 40.0)
 
         for route_index, route in enumerate(routes):
-            distance = _number(route.get("distance_km"), 1.0)
-            traffic = _number(route.get("traffic_index"), DEFAULT_TRAFFIC_INDEX)
+            eff_dist = route_effective_distances[route_index]
             students = max(0.0, _number(route.get("student_count"), 0.0) if route.get("student_count") is not None else 0.0)
 
-            litres = distance / mileage
+            litres = eff_dist / mileage
             diesel_costs[bus_index, route_index] = litres * diesel_price
             co2_values[bus_index, route_index] = litres * DIESEL_CO2_KG_PER_L
-            travel_times[bus_index, route_index] = (distance / FREE_FLOW_SPEED_KMPH) * traffic
+            travel_times[bus_index, route_index] = eff_dist / FREE_FLOW_SPEED_KMPH
 
             fit_score, fit_label, is_eligible = _capacity_fit(capacity, students)
             capacity_scores[bus_index, route_index] = fit_score
@@ -214,9 +304,6 @@ def optimize_routes(
         + weights[4] * compatibility_scores
     )
 
-    # Cost matrix for Hungarian algorithm:
-    # Negate suitability so max suitability becomes min cost.
-    # Set ineligible pairs (students > capacity) to 1e9 so they are excluded unless no eligible bus exists.
     optimization_cost_matrix = -suitability.copy()
     optimization_cost_matrix[~eligible_matrix] += 1e9
 
@@ -229,18 +316,28 @@ def optimize_routes(
         route_label = _label(route, "route_name", "id")
         fit_label = capacity_labels[bus_index][route_index]
         is_eligible = bool(eligible_matrix[bus_index, route_index])
+        eff_dist = route_effective_distances[route_index]
 
-        if not is_eligible:
-            explanation = (
-                f"WARNING: {bus_label} is OVERCAPACITY for {route_label} "
-                f"({int(route.get('student_count', 0))} students vs {int(bus.get('capacity', 0))} seats). "
-                f"No fully eligible bus was available."
-            )
-        else:
-            explanation = (
-                f"{bus_label} is the optimal match for {route_label}: it balances "
-                f"diesel cost, {fit_label.lower()} capacity, travel time, vehicle condition, and route compatibility."
-            )
+        fallback_text = (
+            f"{bus_label} matched to {route_label} (Effective distance: {eff_dist}km, "
+            f"Est. Daily Cost: ₹{diesel_costs[bus_index, route_index]:.2f})."
+        )
+
+        gemini_payload = {
+            "bus": bus_label,
+            "route": route_label,
+            "effective_distance_km": eff_dist,
+            "raw_distance_km": _number(route.get("distance_km"), 1.0),
+            "speed_breaker_count": route.get("speed_breaker_count") or route.get("num_speed_breakers") or 0,
+            "sharp_turn_count": route.get("sharp_turn_count") or 0,
+            "traffic_level": route.get("traffic_level") or "medium",
+            "road_quality": route.get("road_quality") or "average",
+            "daily_diesel_cost_inr": round(float(diesel_costs[bus_index, route_index]), 2),
+            "capacity_fit": fit_label,
+            "fallback_explanation": fallback_text,
+        }
+
+        ai_explanation = call_gemini_api_for_explanation(gemini_payload)
 
         assignments.append({
             "bus": {"id": bus.get("id"), "label": bus_label},
@@ -255,8 +352,9 @@ def optimize_routes(
             "diesel_cost": round(float(diesel_costs[bus_index, route_index]), 2),
             "travel_time_hours": round(float(travel_times[bus_index, route_index]), 2),
             "co2_kg": round(float(co2_values[bus_index, route_index]), 2),
+            "effective_distance_km": eff_dist,
             "capacity_fit": fit_label,
-            "explanation": explanation,
+            "explanation": ai_explanation,
         })
 
     # Naive baseline comparison (first bus to first route, second bus to second route)
@@ -268,6 +366,10 @@ def optimize_routes(
 
     opt_diesel_cost = sum(item["diesel_cost"] for item in assignments)
     opt_co2_kg = sum(item["co2_kg"] for item in assignments)
+
+    baseline_monthly = baseline_diesel_cost * OPERATIONAL_DAYS_PER_MONTH
+    opt_monthly = opt_diesel_cost * OPERATIONAL_DAYS_PER_MONTH
+    monthly_savings_inr = round(max(0.0, baseline_monthly - opt_monthly), 2)
 
     cost_savings_pct = (
         round(((baseline_diesel_cost - opt_diesel_cost) / baseline_diesel_cost) * 100, 2)
@@ -284,18 +386,36 @@ def optimize_routes(
         "before": {
             "diesel_cost": round(baseline_diesel_cost, 2),
             "co2_kg": round(baseline_co2_kg, 2),
+            "monthly_cost": round(baseline_monthly, 2),
         },
         "after": {
             "diesel_cost": round(opt_diesel_cost, 2),
             "co2_kg": round(opt_co2_kg, 2),
+            "monthly_cost": round(opt_monthly, 2),
         },
         "improvement": {
             "cost_savings_pct": cost_savings_pct,
             "co2_reduction_pct": co2_reduction_pct,
             "cost_saved": round(max(0.0, baseline_diesel_cost - opt_diesel_cost), 2),
             "co2_saved": round(max(0.0, baseline_co2_kg - opt_co2_kg), 2),
+            "monthly_savings_inr": monthly_savings_inr,
         },
     }
+
+    # Summary insight payload for Dashboard AI Panel
+    dashboard_payload = {
+        "assignments_count": len(assignments),
+        "monthly_savings_inr": monthly_savings_inr,
+        "co2_reduction_pct": co2_reduction_pct,
+        "cost_savings_pct": cost_savings_pct,
+        "fallback_explanation": (
+            f"Hungarian Route Optimization re-aligned {len(assignments)} vehicles using route condition scoring "
+            f"(traffic, speed breakers, sharp turns, road quality), saving an estimated ₹{monthly_savings_inr:.0f}/month "
+            f"({cost_savings_pct:.1f}% fuel cost reduction)."
+        ),
+    }
+
+    ai_insights_summary = call_gemini_api_for_explanation(dashboard_payload)
 
     return {
         "assignments": assignments,
@@ -304,18 +424,21 @@ def optimize_routes(
         "routes": [{"id": route.get("id"), "label": _label(route, "route_name", "id")} for route in routes],
         "total_diesel_cost": round(opt_diesel_cost, 2),
         "total_co2_kg": round(opt_co2_kg, 2),
+        "monthly_savings_inr": monthly_savings_inr,
         "unassigned_bus_count": n_buses - len(assignments),
         "unassigned_route_count": n_routes - len(assignments),
+        "ai_insights_summary": ai_insights_summary,
         "comparison": comparison,
     }
 
 
 @router.put("/admin/routes/{route_id}/condition")
 def update_route_condition(route_id: str, data: dict[str, Any] = Body(...)):
-    """Admin updates manually-entered route condition parameters safely."""
+    """Admin updates route condition parameters (traffic_level, road_quality, speed_breaker_count, sharp_turn_count)."""
     allowed_keys = {
         "traffic_level",
-        "num_speed_breakers",
+        "speed_breaker_count",
+        "sharp_turn_count",
         "num_narrow_road_sections",
         "road_quality",
         "avg_speed_kmph",
@@ -327,12 +450,12 @@ def update_route_condition(route_id: str, data: dict[str, Any] = Body(...)):
 
     update_data = {}
     valid_traffic = {"low", "medium", "high"}
-    valid_quality = {"good", "moderate", "poor"}
+    valid_quality = {"good", "average", "moderate", "poor"}
 
     for key, val in raw_data.items():
         if val == "" or val is None:
             update_data[key] = None
-        elif key in ("num_speed_breakers", "num_narrow_road_sections"):
+        elif key in ("speed_breaker_count", "sharp_turn_count", "num_narrow_road_sections"):
             try:
                 update_data[key] = int(val)
             except (ValueError, TypeError):
@@ -356,81 +479,3 @@ def update_route_condition(route_id: str, data: dict[str, Any] = Body(...)):
         return {"status": "success", "data": result.data}
     except Exception as e:
         raise HTTPException(400, f"Failed to update route condition: {str(e)}")
-
-
-@router.put("/admin/buses/{bus_id}/attributes")
-def update_bus_attributes(bus_id: str, data: dict[str, Any] = Body(...)):
-    """Admin updates bus attributes (bus_type, age_years, suitable_for_narrow_roads)."""
-    allowed_keys = {"bus_type", "age_years", "suitable_for_narrow_roads"}
-    raw_data = {k: v for k, v in data.items() if k in allowed_keys}
-    if not raw_data:
-        raise HTTPException(400, "No valid bus attribute fields provided")
-
-    update_data = {}
-    valid_bus_types = {"large", "medium", "small"}
-
-    for key, val in raw_data.items():
-        if val == "" or val is None:
-            update_data[key] = None
-        elif key == "age_years":
-            try:
-                update_data[key] = int(val)
-            except (ValueError, TypeError):
-                update_data[key] = None
-        elif key == "suitable_for_narrow_roads":
-            update_data[key] = bool(val)
-        elif key == "bus_type":
-            val_str = str(val).lower().strip()
-            update_data[key] = val_str if val_str in valid_bus_types else None
-
-    try:
-        result = supabase.table("buses").update(update_data).eq("id", bus_id).execute()
-        return {"status": "success", "data": result.data}
-    except Exception as e:
-        raise HTTPException(400, f"Failed to update bus attributes: {str(e)}")
-
-
-# ─── PHASE 3: WHAT-IF SIMULATION & APPROVAL WORKFLOW ENDPOINTS ──────
-
-@router.post("/admin/simulate-bus-unavailable/{bus_id}")
-def simulate_bus_unavailable(bus_id: str, school_id: Optional[str] = Query(None)):
-    """Re-runs optimization excluding bus_id and computes cost/time delta."""
-    # 1. Run full optimization baseline
-    baseline = optimize_routes(school_id=school_id)
-
-    # 2. Exclude target bus
-    buses_res = supabase.table("buses").select("*").neq("id", bus_id)
-    routes_res = supabase.table("routes").select("*")
-    if school_id:
-        buses_res = buses_res.eq("school_id", school_id)
-        routes_res = routes_res.eq("school_id", school_id)
-
-    buses = buses_res.execute().data or []
-    routes = routes_res.execute().data or []
-
-    if not buses or not routes:
-        return {"error": "Insufficient buses/routes for simulation"}
-
-    # Target bus details
-    target_bus_res = supabase.table("buses").select("*").eq("id", bus_id).execute()
-    target_bus_label = _label(target_bus_res.data[0], "bus_number", "bus_code") if target_bus_res.data else bus_id
-
-    # Compute simulation run
-    sim_result = optimize_routes(school_id=school_id)
-
-    cost_delta = round(sim_result["total_diesel_cost"] - baseline["total_diesel_cost"], 2)
-    co2_delta = round(sim_result["total_co2_kg"] - baseline["total_co2_kg"], 2)
-
-    return {
-        "excluded_bus": {"id": bus_id, "label": target_bus_label},
-        "baseline_diesel_cost": baseline["total_diesel_cost"],
-        "simulated_diesel_cost": sim_result["total_diesel_cost"],
-        "cost_delta": cost_delta,
-        "co2_delta": co2_delta,
-        "unassigned_route_count": sim_result["unassigned_route_count"],
-        "new_assignments": sim_result["assignments"],
-        "summary": (
-            f"If {target_bus_label} is unavailable, diesel fuel cost changes by ₹{cost_delta:+.2f} "
-            f"and unassigned routes count is {sim_result['unassigned_route_count']}."
-        ),
-    }

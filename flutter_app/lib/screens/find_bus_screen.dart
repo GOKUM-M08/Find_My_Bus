@@ -568,7 +568,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
               );
             },
           ),

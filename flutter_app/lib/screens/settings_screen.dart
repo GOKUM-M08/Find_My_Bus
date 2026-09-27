@@ -1,188 +1,374 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../services/language_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'config.dart';
 import '../widgets/admin_drawer.dart';
 
-const Color PRIMARY_BLUE = Color(0xFF0052CC);
-const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
-const Color LIGHT_BLUE = Color(0xFFE8F0FE);
-const Color BACKGROUND_BLUE = Color(0xFFF7F9FC);
+const Color kPrimaryBlue = Color(0xFF0052CC);
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final String schoolId;
+  final String schoolName;
+
+  const SettingsScreen({
+    super.key,
+    required this.schoolId,
+    required this.schoolName,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final languageService = LanguageService();
+  final supabase = Supabase.instance.client;
+  bool _loading = true;
+  bool _dbConnected = false;
+  bool _apiConnected = false;
 
-  bool _overspeedAlerts = true;
-  bool _etaNotifications = true;
-  bool _soundEnabled = true;
-  double _refreshIntervalSec = 10.0;
+  List<Map<String, dynamic>> _auditLogs = [];
+  List<Map<String, dynamic>> _buses = [];
+  Map<String, String> _tripDirections = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettingsData();
+  }
+
+  Future<void> _loadSettingsData() async {
+    setState(() => _loading = true);
+
+    bool dbStatus = false;
+    bool apiStatus = false;
+
+    // Check Supabase
+    try {
+      await supabase.from('schools').select('id').limit(1);
+      dbStatus = true;
+    } catch (_) {
+      dbStatus = false;
+    }
+
+    // Check Backend API
+    try {
+      final res = await http.get(Uri.parse(kBackendBaseUrl)).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        apiStatus = true;
+      }
+    } catch (_) {
+      apiStatus = false;
+    }
+
+    // Fetch Audit Logs
+    List<Map<String, dynamic>> logs = [];
+    try {
+      final logRows = await supabase
+          .from('admin_audit_logs')
+          .select('*')
+          .eq('school_id', widget.schoolId)
+          .order('created_at', ascending: false)
+          .limit(50);
+      logs = List<Map<String, dynamic>>.from(logRows);
+    } catch (_) {}
+
+    // Fetch Buses & Trip Directions
+    List<Map<String, dynamic>> buses = [];
+    final directions = <String, String>{};
+    try {
+      final busRows = await supabase
+          .from('buses')
+          .select('id, bus_number, driver_name')
+          .eq('school_id', widget.schoolId);
+      buses = List<Map<String, dynamic>>.from(busRows);
+
+      for (final b in buses) {
+        final bId = b['id'] as String;
+        try {
+          final res = await http.get(Uri.parse('$kBackendBaseUrl/api/tracking/$bId/trip-direction')).timeout(const Duration(seconds: 3));
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            directions[bId] = data['trip_direction'] ?? 'morning';
+          }
+        } catch (_) {
+          directions[bId] = 'morning';
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _dbConnected = dbStatus;
+      _apiConnected = apiStatus;
+      _auditLogs = logs;
+      _buses = buses;
+      _tripDirections = directions;
+      _loading = false;
+    });
+  }
+
+  Future<void> _overrideTripDirection(String busId, String newDirection) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$kBackendBaseUrl/api/tracking/$busId/trip-direction'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'trip_direction': newDirection}),
+      );
+
+      if (res.statusCode == 200) {
+        setState(() {
+          _tripDirections[busId] = newDirection;
+        });
+
+        // Audit log
+        final user = supabase.auth.currentUser;
+        await supabase.from('admin_audit_logs').insert({
+          'school_id': widget.schoolId,
+          'admin_user_id': user?.id,
+          'admin_email': user?.email,
+          'action_type': 'TRIP_DIRECTION_OVERRIDE',
+          'target_entity': 'buses',
+          'target_id': busId,
+          'details': 'Manually overridden trip direction to $newDirection',
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Trip direction manually set to "$newDirection"')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to override direction: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: languageService,
-      builder: (context, _) {
-        final isTa = languageService.isTamil;
+    final isDesktop = MediaQuery.of(context).size.width >= 800;
 
-        return Scaffold(
-          backgroundColor: BACKGROUND_BLUE,
-          drawer: const AdminDrawer(
-            schoolId: '',
-            schoolName: 'System Settings',
-            currentRoute: 'settings',
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FC),
+      drawer: AdminDrawer(
+        schoolId: widget.schoolId,
+        schoolName: widget.schoolName,
+        currentRoute: 'settings',
+      ),
+      appBar: AppBar(
+        title: Text('${widget.schoolName} — Settings & Audit Logs'),
+        backgroundColor: kPrimaryBlue,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadSettingsData,
           ),
-          appBar: AppBar(
-            backgroundColor: PRIMARY_BLUE,
-            foregroundColor: Colors.white,
-            elevation: 4,
-            title: Text(
-              isTa ? 'தீம் & அமைப்புகள்' : 'Theme & Settings',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryBlue))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHealthStatusCard(),
+                  const SizedBox(height: 20),
+                  _buildTripDirectionOverrideSection(),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Admin Action Audit Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text('${_auditLogs.length} Recent Log Entries', style: const TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _auditLogs.isEmpty
+                      ? const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('No admin audit logs recorded yet.')))
+                      : isDesktop
+                          ? _buildDesktopAuditTable()
+                          : _buildMobileAuditList(),
+                ],
+              ),
             ),
-          ),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
+    );
+  }
+
+  Widget _buildHealthStatusCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('System Health & Connectivity Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 12),
+          Row(
             children: [
-              // Language Quick Switcher Section
-              _buildSectionTitle(isTa ? 'மொழி அமைப்புகள்' : 'Language Preferences'),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  children: [
-                    RadioListTile<String>(
-                      value: 'en',
-                      groupValue: languageService.currentLanguage,
-                      title: const Text('English (Default)', style: TextStyle(fontWeight: FontWeight.bold)),
-                      activeColor: PRIMARY_BLUE,
-                      onChanged: (val) {
-                        if (val != null) languageService.setLanguage(val);
-                      },
-                    ),
-                    const Divider(height: 1),
-                    RadioListTile<String>(
-                      value: 'ta',
-                      groupValue: languageService.currentLanguage,
-                      title: const Text('தமிழ் (Tamil)', style: TextStyle(fontWeight: FontWeight.bold)),
-                      activeColor: PRIMARY_BLUE,
-                      onChanged: (val) {
-                        if (val != null) languageService.setLanguage(val);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // GPS Refresh & Performance Settings
-              _buildSectionTitle(isTa ? 'ஜிபிஎஸ் புதுப்பிப்பு அமைப்புகள்' : 'Live Tracking Performance'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          isTa ? 'நேரலை புதுப்பிப்பு இடைவெளி' : 'Live GPS Refresh Interval',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: LIGHT_BLUE,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${_refreshIntervalSec.toInt()} sec',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: PRIMARY_BLUE, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Slider(
-                      value: _refreshIntervalSec,
-                      min: 5,
-                      max: 30,
-                      divisions: 5,
-                      activeColor: PRIMARY_BLUE,
-                      onChanged: (val) => setState(() => _refreshIntervalSec = val),
-                    ),
-                    Text(
-                      isTa ? 'குறைந்த இடைவெளி அதிவேக நேரலை கண்காணிப்பை வழங்கும்.' : 'Faster refresh interval provides sub-second GPS tracking on the map.',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Notifications & Alerts
-              _buildSectionTitle(isTa ? 'அறிவிப்பு அமைப்புகள்' : 'Notification Preferences'),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      value: _overspeedAlerts,
-                      activeColor: PRIMARY_BLUE,
-                      title: Text(isTa ? 'அதிவேக எச்சரிக்கைகள்' : 'Overspeed Warnings'),
-                      subtitle: Text(isTa ? 'பேருந்து 60 கி.மீ/மணிக்கு மேல் சென்றால் எச்சரிக்கவும்' : 'Alert when bus exceeds 60 km/h threshold'),
-                      onChanged: (val) => setState(() => _overspeedAlerts = val),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: _etaNotifications,
-                      activeColor: PRIMARY_BLUE,
-                      title: Text(isTa ? 'வருகை அறிவிப்புகள்' : 'Bus Stop Arrival Warnings'),
-                      subtitle: Text(isTa ? 'பேருந்து வருகைக்கு 5 நிமிடங்களுக்கு முன் அறிவிக்கும்' : 'Notify 5 minutes before bus arrives at stop'),
-                      onChanged: (val) => setState(() => _etaNotifications = val),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: _soundEnabled,
-                      activeColor: PRIMARY_BLUE,
-                      title: Text(isTa ? 'ஒலி விழிப்பூட்டல்கள்' : 'Alert Chime Sound'),
-                      onChanged: (val) => setState(() => _soundEnabled = val),
-                    ),
-                  ],
+              Icon(_dbConnected ? Icons.check_circle : Icons.error, color: _dbConnected ? Colors.green : Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _dbConnected ? 'Supabase Database Connected' : 'Supabase Connection Error',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: _dbConnected ? Colors.green : Colors.red),
                 ),
               ),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(_apiConnected ? Icons.check_circle : Icons.warning_amber_rounded, color: _apiConnected ? Colors.green : Colors.orange),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _apiConnected ? 'Python FastAPI Backend Connected ($kBackendBaseUrl)' : 'FastAPI Backend Offline / Unreachable ($kBackendBaseUrl)',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: _apiConnected ? Colors.green : Colors.orange),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('Active School Scope ID: ${widget.schoolId}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ],
+      ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.bold,
-        color: PRIMARY_BLUE,
+  Widget _buildTripDirectionOverrideSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Manual Trip Direction Override', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text(
+            'Override automated trip direction calculation for edge cases (e.g. correcting after false auto-flip).',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          _buses.isEmpty
+              ? const Text('No buses available.')
+              : Column(
+                  children: _buses.map((bus) {
+                    final bId = bus['id'] as String;
+                    final currentDir = _tripDirections[bId] ?? 'morning';
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${bus['bus_number']} (${bus['driver_name'] ?? 'Driver'})',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ),
+                          SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment(value: 'morning', label: Text('Morning Pickup')),
+                              ButtonSegment(value: 'evening', label: Text('Evening Dropoff')),
+                            ],
+                            selected: {currentDir},
+                            onSelectionChanged: (setVal) {
+                              if (setVal.isNotEmpty) {
+                                _overrideTripDirection(bId, setVal.first);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopAuditTable() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('Timestamp')),
+          DataColumn(label: Text('Admin User')),
+          DataColumn(label: Text('Action Type')),
+          DataColumn(label: Text('Target Entity')),
+          DataColumn(label: Text('Details')),
+        ],
+        rows: _auditLogs.map((log) {
+          final ts = log['created_at'] != null ? DateTime.parse(log['created_at']).toLocal().toString().split('.')[0] : '—';
+          return DataRow(cells: [
+            DataCell(Text(ts, style: const TextStyle(fontSize: 12))),
+            DataCell(Text(log['admin_email'] ?? 'Admin', style: const TextStyle(fontSize: 13))),
+            DataCell(Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: kPrimaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+              child: Text(log['action_type'] ?? '', style: const TextStyle(color: kPrimaryBlue, fontWeight: FontWeight.bold, fontSize: 11)),
+            )),
+            DataCell(Text(log['target_entity'] ?? '—')),
+            DataCell(Text(log['details'] ?? '—')),
+          ]);
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildMobileAuditList() {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _auditLogs.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, idx) {
+        final log = _auditLogs[idx];
+        final ts = log['created_at'] != null ? DateTime.parse(log['created_at']).toLocal().toString().split('.')[0] : '—';
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(log['action_type'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimaryBlue)),
+                  Text(ts, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text('By: ${log['admin_email'] ?? 'Admin'}'),
+              Text('Details: ${log['details'] ?? '—'}'),
+            ],
+          ),
+        );
+      },
     );
   }
 }

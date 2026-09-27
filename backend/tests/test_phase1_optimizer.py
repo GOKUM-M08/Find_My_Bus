@@ -13,13 +13,13 @@ def test_overcapacity_ineligible():
     assert fit_label == "Overcapacity"
 
 def test_route_difficulty_unentered_returns_none():
-    route = {"traffic_level": None, "num_speed_breakers": None, "num_narrow_road_sections": None, "road_quality": None}
+    route = {"traffic_level": None, "speed_breaker_count": None, "num_narrow_road_sections": None, "road_quality": None}
     assert _compute_route_difficulty(route) is None
 
 def test_route_difficulty_calculation():
     route = {
         "traffic_level": "medium", # 50 * 0.30 = 15
-        "num_speed_breakers": 2,    # 20 * 0.25 = 5
+        "speed_breaker_count": 2,    # 20 * 0.25 = 5
         "num_narrow_road_sections": 1, # 25 * 0.25 = 6.25
         "road_quality": "good",     # 10 * 0.20 = 2
     }
@@ -29,7 +29,7 @@ def test_route_difficulty_calculation():
 
 def test_route_compatibility():
     bus_large = {"bus_type": "large", "suitable_for_narrow_roads": False}
-    route_narrow = {"num_narrow_road_sections": 2, "num_speed_breakers": 1}
+    route_narrow = {"num_narrow_road_sections": 2, "speed_breaker_count": 1}
     diff = 70.0
     score, label = _compute_compatibility(bus_large, route_narrow, diff)
     assert score < 1.0
