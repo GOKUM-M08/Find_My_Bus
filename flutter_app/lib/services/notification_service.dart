@@ -81,6 +81,7 @@ class NotificationService {
     } catch (e, stack) {
       debugPrint(
           '[FCM Subscription ERROR] Failed to subscribe to topic $topic: $e\nStack: $stack');
+      rethrow;
     }
   }
 
@@ -97,6 +98,7 @@ class NotificationService {
     } catch (e, stack) {
       debugPrint(
           '[FCM Unsubscribe ERROR] Failed to unsubscribe from topic $topic: $e\nStack: $stack');
+      rethrow;
     }
   }
 
@@ -115,5 +117,15 @@ class NotificationService {
     await subscribeToStop(busId, newStopId);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_stop_$busId', newStopId);
+  }
+
+  /// Clears selected notification stop for a bus (unsubscribes from active FCM topic and removes local preference).
+  Future<void> clearSelectedStop(String busId) async {
+    final oldStopId = await getSelectedStopId(busId);
+    if (oldStopId != null) {
+      await unsubscribeFromStop(busId, oldStopId);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('selected_stop_$busId');
   }
 }

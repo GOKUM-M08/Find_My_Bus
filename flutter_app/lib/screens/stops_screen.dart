@@ -36,6 +36,7 @@ class _StopsScreenState extends State<StopsScreen> {
   int _currentStopIndex = -1; // -1 = unknown / not yet moving
   bool _busIsLive = false;
   String? _selectedNotifStopId;
+  bool _isProcessingNotif = false;
   String _tripDirection = 'morning';
   Timer? _refreshTimer;
 
@@ -70,36 +71,100 @@ class _StopsScreenState extends State<StopsScreen> {
   }
 
   Future<void> _selectNotificationStop(Map<String, dynamic> stop) async {
+    if (_isProcessingNotif) return;
+
     final stopId = str(stop['id']);
     final stopName = stop['stop_name'] ?? 'Stop';
+    final isCurrentlyActive = (_selectedNotifStopId == stopId);
+    final previousStopId = _selectedNotifStopId;
 
-    await notificationService.switchSelectedStop(widget.busId, stopId);
+    setState(() {
+      _isProcessingNotif = true;
+      if (isCurrentlyActive) {
+        _selectedNotifStopId = null;
+      } else {
+        _selectedNotifStopId = stopId;
+      }
+    });
 
-    if (!mounted) return;
-    setState(() => _selectedNotifStopId = stopId);
-
-    final msgTemplate = languageService.getText('subscribed_to_stop');
-    final msg = msgTemplate.replaceAll('{stop}', stopName);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.notifications_active, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                msg,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+    try {
+      if (isCurrentlyActive) {
+        // Tapping active bell turns notifications OFF entirely
+        await notificationService.clearSelectedStop(widget.busId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.notifications_off_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    languageService.isTamil
+                        ? 'அறிவிப்புகள் முடக்கப்பட்டன'
+                        : 'Notifications turned off entirely',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF0052CC),
-        duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+            backgroundColor: Colors.blueGrey.shade800,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        // Tapping inactive stop bell selects that stop / switches stop
+        await notificationService.switchSelectedStop(widget.busId, stopId);
+        if (!mounted) return;
+
+        final msgTemplate = languageService.getText('subscribed_to_stop');
+        final msg = msgTemplate.replaceAll('{stop}', stopName);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.notifications_active, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    msg,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0052CC),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      // Revert UI on failure
+      if (mounted) {
+        setState(() {
+          _selectedNotifStopId = previousStopId;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              languageService.isTamil
+                  ? 'அறிவிப்பு அமைப்பை மாற்ற முடியவில்லை'
+                  : 'Failed to update notification setting. Reverting...',
+            ),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingNotif = false);
+      }
+    }
   }
 
   String str(dynamic val) => val?.toString() ?? '';
@@ -574,16 +639,22 @@ class _StopsScreenState extends State<StopsScreen> {
             // Select Stop Notification Button (Bell Icon)
             IconButton(
               tooltip: languageService.getText('select_stop_notify'),
-              onPressed: () => _selectNotificationStop(stop),
-              icon: Icon(
-                isSelectedForNotif
-                    ? Icons.notifications_active
-                    : Icons.notifications_none_outlined,
-                color: isSelectedForNotif
-                    ? const Color(0xFF0052CC)
-                    : Colors.grey.shade600,
-                size: 24,
-              ),
+              onPressed: _isProcessingNotif ? null : () => _selectNotificationStop(stop),
+              icon: _isProcessingNotif && isSelectedForNotif
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0052CC)),
+                    )
+                  : Icon(
+                      isSelectedForNotif
+                          ? Icons.notifications_active
+                          : Icons.notifications_none_outlined,
+                      color: isSelectedForNotif
+                          ? const Color(0xFF0052CC)
+                          : Colors.grey.shade600,
+                      size: 24,
+                    ),
             ),
           ],
         ),

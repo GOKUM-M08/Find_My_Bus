@@ -196,72 +196,104 @@ class _FindBusScreenState extends State<FindBusScreen> {
               ),
             ],
           ),
-          body: Column(
+          body: Stack(
             children: [
-              // Search bar
-              Container(
-                color: PRIMARY_BLUE,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: PRIMARY_BLUE.withOpacity(0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      )
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _onSearchChanged,
-                    decoration: InputDecoration(
-                      hintText: languageService.getText('search_hint'),
-                      prefixIcon: const Icon(Icons.search, color: PRIMARY_BLUE),
-                      suffixIcon: _searching
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE),
-                                ),
-                              ),
-                            )
-                          : null,
-                      border: OutlineInputBorder(
+              Column(
+                children: [
+                  // Search bar
+                  Container(
+                    color: PRIMARY_BLUE,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                        boxShadow: [
+                          BoxShadow(
+                            color: PRIMARY_BLUE.withOpacity(0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          )
+                        ],
                       ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: languageService.getText('search_hint'),
+                          prefixIcon: const Icon(Icons.search, color: PRIMARY_BLUE),
+                          suffixIcon: _searching
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation(PRIMARY_BLUE),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  if (!showingSuggestions)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 2),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          languageService.getText('search_subtext'),
+                          style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
+                        ),
+                      ),
+                    ),
+
+                  Expanded(
+                    child: showingSuggestions
+                        ? _buildSuggestionsList()
+                        : _buildBrowseList(),
+                  ),
+                ],
+              ),
+
+              // Small unobtrusive driver login icon button at bottom-right (48x48 min tap target)
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: SafeArea(
+                  child: Semantics(
+                    label: languageService.getText('driver_login'),
+                    button: true,
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: FloatingActionButton(
+                        heroTag: 'driver_login_fab',
+                        tooltip: languageService.getText('driver_login'),
+                        backgroundColor: Colors.white,
+                        foregroundColor: PRIMARY_BLUE,
+                        elevation: 4,
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          );
+                        },
+                        child: const Icon(Icons.directions_car, size: 24),
+                      ),
                     ),
                   ),
                 ),
               ),
-
-              if (!showingSuggestions)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 2),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      languageService.getText('search_subtext'),
-                      style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
-                    ),
-                  ),
-                ),
-
-              Expanded(
-                child: showingSuggestions
-                    ? _buildSuggestionsList()
-                    : _buildBrowseList(),
-              ),
-
-              _buildBottomBar(),
             ],
           ),
         );
@@ -340,7 +372,7 @@ class _FindBusScreenState extends State<FindBusScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 80),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -369,37 +401,6 @@ class _FindBusScreenState extends State<FindBusScreen> {
             onTap: () => _openBus(bus),
           ),
       ],
-    );
-  }
-
-  Widget _buildBottomBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.14),
-            blurRadius: 14,
-            offset: const Offset(0, -3),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: _BottomBarButton(
-            icon: Icons.badge_outlined,
-            label: languageService.getText('driver_login'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-            },
-          ),
-        ),
-      ),
     );
   }
 

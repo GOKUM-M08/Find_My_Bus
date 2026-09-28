@@ -95,14 +95,26 @@ class _TrackingScreenState extends State<TrackingScreen>
       );
     });
 
+    _initStopNotification();
+  }
+
+  Future<void> _initStopNotification() async {
     if (widget.stopId != null) {
-      NotificationService().subscribeToStop(widget.busId, widget.stopId!);
+      await NotificationService().switchSelectedStop(widget.busId, widget.stopId!);
       _fetchETA(widget.stopId!);
       _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _fetchETA(widget.stopId!);
       });
     } else {
-      _eta = "Select a stop for ETA";
+      final persistedStopId = await NotificationService().getSelectedStopId(widget.busId);
+      if (persistedStopId != null) {
+        _fetchETA(persistedStopId);
+        _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+          _fetchETA(persistedStopId);
+        });
+      } else {
+        _eta = "Select a stop for ETA";
+      }
     }
   }
 
@@ -466,22 +478,6 @@ class _TrackingScreenState extends State<TrackingScreen>
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.bustrack',
-              ),
-              PolylineLayer(
-                polylines: [
-                  // Outer border stroke
-                  Polyline(
-                    points: _routePoints,
-                    color: const Color(0xFF003D99).withOpacity(0.3),
-                    strokeWidth: 8,
-                  ),
-                  // Inner route line matching screenshot
-                  Polyline(
-                    points: _routePoints,
-                    color: SECONDARY_BLUE,
-                    strokeWidth: 5,
-                  ),
-                ],
               ),
               MarkerLayer(
                 markers: [
