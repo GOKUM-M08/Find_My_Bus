@@ -1,12 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routes import buses, tracking, students, schools, route_optimizer, gps
+from routes import buses, tracking, students, schools, route_optimizer, gps, parent
 import asyncio
 import json
 from database import redis_client
-from traccar_forward import router as traccar_router   # ← import is fine up here
+from traccar_forward import router as traccar_router
 
-app = FastAPI(title="BusTrack API", version="1.0.0")   # ← app created here
+app = FastAPI(title="BusTrack API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,7 +22,9 @@ app.include_router(students.router, prefix="/api/students", tags=["Students"])
 app.include_router(schools.router, prefix="/api/schools", tags=["Schools"])
 app.include_router(route_optimizer.router, tags=["Route Optimizer"])
 app.include_router(gps.router, tags=["GPS Ingest"])
-app.include_router(traccar_router, tags=["Traccar Forward"])   # ← call goes down here, with the others
+app.include_router(traccar_router, tags=["Traccar Forward"])
+app.include_router(parent.router, prefix="/api/parent", tags=["Parent"])
+
 # Store active WebSocket connections
 # Key: bus_id → List of connected parent WebSockets
 active_connections: dict = {}
@@ -37,6 +39,12 @@ async def websocket_track(websocket: WebSocket, bus_id: str):
     Parents connect here to get live bus location updates.
     Every time bus sends GPS data, all connected parents get updated.
     """
+    # Only a logged-in parent of THIS bus may connect: ws://.../ws/track/<bus_id>?token=<login token>
+    allowed_buses = parent.bus_ids_for_token(websocket.query_params.get("token", ""))
+    if not allowed_buses or bus_id not in allowed_buses:
+        await websocket.close(code=4401)
+        return
+
     await websocket.accept()
     
     if bus_id not in active_connections:
@@ -49,7 +57,8 @@ async def websocket_track(websocket: WebSocket, bus_id: str):
             await asyncio.sleep(30)
             await websocket.send_text(json.dumps({"type": "ping"}))
     except WebSocketDisconnect:
-        active_connections[bus_id].remove(websocket)
+        if bus_id in active_connections and websocket in active_connections[bus_id]:
+            active_connections[bus_id].remove(websocket)
 
 async def broadcast_location(bus_id: str, location_data: dict):
     """
