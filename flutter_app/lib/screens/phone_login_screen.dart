@@ -192,20 +192,27 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const SizedBox(height: 16),
-                        // Bus Icon in rounded blue circle
+                        // App Logo
                         Center(
-                          child: Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: kPrimaryBlue.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.directions_bus_rounded,
-                                size: 44,
-                                color: kPrimaryBlue,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.asset(
+                              'assets/icon/icon.png',
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  color: kPrimaryBlue.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.directions_bus_rounded,
+                                  size: 44,
+                                  color: kPrimaryBlue,
+                                ),
                               ),
                             ),
                           ),
