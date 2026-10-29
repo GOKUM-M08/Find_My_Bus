@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +10,21 @@ import 'session_store.dart';
 
 enum BusIntent { location, eta, delay, stopsAway, unknown }
 
+class VoiceApiException implements Exception {
+  final int statusCode;
+  final String message;
+  VoiceApiException(this.statusCode, this.message);
+  @override
+  String toString() => 'VoiceApiException($statusCode, $message)';
+}
+
+class VoiceNoLocationException implements Exception {
+  final String message;
+  VoiceNoLocationException([this.message = 'No live location yet']);
+  @override
+  String toString() => 'VoiceNoLocationException: $message';
+}
+
 class IntentKeyword {
   final String keyword;
   final String lang; // 'ta' or 'en'
@@ -16,11 +32,24 @@ class IntentKeyword {
 }
 
 class VoiceAssistantService {
-  final stt.SpeechToText _speech = stt.SpeechToText();
-  final FlutterTts _tts = FlutterTts();
-  final LanguageService _langService = LanguageService();
+  final stt.SpeechToText _speech;
+  final FlutterTts _tts;
+  final LanguageService _langService;
+  http.Client _httpClient;
 
   bool _speechEnabled = false;
+
+  VoiceAssistantService({
+    stt.SpeechToText? speech,
+    FlutterTts? tts,
+    LanguageService? langService,
+    http.Client? httpClient,
+  })  : _speech = speech ?? stt.SpeechToText(),
+        _tts = tts ?? FlutterTts(),
+        _langService = langService ?? LanguageService(),
+        _httpClient = httpClient ?? http.Client();
+
+  set httpClient(http.Client client) => _httpClient = client;
 
   /// Initialize STT & TTS. Call once before use.
   Future<bool> init() async {
@@ -246,12 +275,23 @@ class VoiceAssistantService {
       switch (intent) {
         case BusIntent.location:
           final data = await _get('/api/parent/bus/$busId/location');
-          final landmark = data['nearest_landmark'] ?? data['stop_name'] ?? 'Main Gate';
-          return _template('tpl_location', {'place': landmark}, langCode: langCode);
+          final landmark = data['nearest_landmark'] ?? data['stop_name'];
+          if (landmark == null ||
+              landmark.toString().trim().isEmpty ||
+              landmark.toString().toLowerCase() == 'location not available' ||
+              landmark.toString().toLowerCase() == 'unknown location') {
+            throw VoiceNoLocationException('Bus location not available');
+          }
+          return _template('tpl_location', {'place': landmark.toString()}, langCode: langCode);
 
         case BusIntent.eta:
           final data = await _get('/api/parent/bus/$busId/eta$queryParams');
+          final eta = data['eta']?.toString().toLowerCase() ?? '';
           final minutes = data['eta_minutes'] ?? 0;
+          final stopsAway = data['stops_away'] ?? 0;
+          if (eta.contains('not available') || (minutes == 0 && stopsAway < 0)) {
+            throw VoiceNoLocationException('ETA location not available');
+          }
           return _template('tpl_eta', {'minutes': '$minutes'}, langCode: langCode);
 
         case BusIntent.delay:
@@ -265,28 +305,67 @@ class VoiceAssistantService {
         case BusIntent.stopsAway:
           final data = await _get('/api/parent/bus/$busId/stops-away$queryParams');
           final count = data['stops_away'] ?? 0;
+          if (count < 0) {
+            throw VoiceNoLocationException('Stops away not available');
+          }
           return _template('tpl_stopsAway', {'count': '$count'}, langCode: langCode);
 
         case BusIntent.unknown:
           return _template('tpl_fallback', {}, langCode: langCode);
       }
+    } on VoiceNoLocationException catch (e) {
+      debugPrint('[Voice Assistant No Location] $e');
+      return _template('tpl_voice_no_location', {}, langCode: langCode);
+    } on VoiceApiException catch (e) {
+      debugPrint('[Voice Assistant API Error] ${e.statusCode}: ${e.message}');
+      if (e.statusCode == 401) {
+        return _template('tpl_voice_unauthorized', {}, langCode: langCode);
+      } else if (e.statusCode == 403) {
+        return _template('tpl_voice_forbidden', {}, langCode: langCode);
+      } else {
+        return _template('tpl_voice_server_error', {}, langCode: langCode);
+      }
     } catch (e) {
       debugPrint('[Voice Assistant Query Error] $e');
-      return _template('tpl_error', {}, langCode: langCode);
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('socket') ||
+          errStr.contains('clientexception') ||
+          errStr.contains('network') ||
+          errStr.contains('timeout') ||
+          errStr.contains('failed host lookup') ||
+          errStr.contains('connection refused') ||
+          errStr.contains('connection reset') ||
+          errStr.contains('connection closed') ||
+          errStr.contains('os error')) {
+        return _template('tpl_voice_no_internet', {}, langCode: langCode);
+      }
+      return _template('tpl_voice_server_error', {}, langCode: langCode);
     }
   }
 
   Future<Map<String, dynamic>> _get(String path) async {
+    final token = await SessionStore.instance.getToken();
+    if (token == null || token.isEmpty) {
+      throw VoiceApiException(401, 'Unauthorized: No token saved');
+    }
+
     final url = Uri.parse('$kBackendBaseUrl$path');
     debugPrint('[Voice Assistant GET] $url');
-    final token = await SessionStore.instance.getToken();
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      'Authorization': 'Bearer $token',
     };
-    final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 8));
-    if (res.statusCode != 200) {
-      throw Exception('Backend error ${res.statusCode}');
+    final res = await _httpClient.get(url, headers: headers).timeout(const Duration(seconds: 8));
+    if (res.statusCode == 401) {
+      throw VoiceApiException(401, 'Unauthorized');
+    } else if (res.statusCode == 403) {
+      throw VoiceApiException(403, 'Forbidden');
+    } else if (res.statusCode == 404) {
+      throw VoiceNoLocationException('Location not found');
+    } else if (res.statusCode >= 500) {
+      throw VoiceApiException(res.statusCode, 'Server error ${res.statusCode}');
+    } else if (res.statusCode != 200) {
+      throw VoiceApiException(res.statusCode, 'Backend error ${res.statusCode}');
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
@@ -298,14 +377,20 @@ class VoiceAssistantService {
   }
 
   Future<void> speak(String text, {String? langCode}) async {
-    final ttsLang = (langCode ?? _langService.currentLanguage) == 'ta' ? 'ta-IN' : 'en-IN';
-    debugPrint('[TTS Speaking] Language: $ttsLang, Text: $text');
-    await _tts.setLanguage(ttsLang);
-    await _tts.speak(text);
+    try {
+      final ttsLang = (langCode ?? _langService.currentLanguage) == 'ta' ? 'ta-IN' : 'en-IN';
+      debugPrint('[TTS Speaking] Language: $ttsLang, Text: $text');
+      await _tts.setLanguage(ttsLang);
+      await _tts.speak(text);
+    } catch (e) {
+      debugPrint('[TTS Error] $e');
+    }
   }
 
   void dispose() {
-    _speech.cancel();
-    _tts.stop();
+    try {
+      _speech.cancel();
+      _tts.stop();
+    } catch (_) {}
   }
 }

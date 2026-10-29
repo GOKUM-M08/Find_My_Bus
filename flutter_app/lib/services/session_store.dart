@@ -126,7 +126,7 @@ class SessionState {
 }
 
 class SessionStore {
-  static final SessionStore instance = SessionStore();
+  static SessionStore instance = SessionStore();
 
   final FlutterSecureStorage _storage;
 

@@ -97,6 +97,11 @@ class LanguageService extends ChangeNotifier {
       'tpl_stopsAway': 'The bus is {count} stops away.',
       'tpl_fallback': "Sorry, I didn't understand that. Try asking where the bus is, or when it will arrive.",
       'tpl_error': 'Sorry, I could not fetch the bus details right now. Please try again.',
+      'tpl_voice_no_internet': 'No internet connection. Please check your network and try again.',
+      'tpl_voice_unauthorized': 'You are not logged in. Please log in again to track this bus.',
+      'tpl_voice_forbidden': 'This bus is not linked to your account.',
+      'tpl_voice_no_location': 'The bus has not started sharing its live location yet. Please check back shortly.',
+      'tpl_voice_server_error': 'The server encountered an error. Please try again in a few moments.',
       
       // Parent Login UI Keys
       'login_title': 'Find My Bus',
@@ -204,6 +209,11 @@ class LanguageService extends ChangeNotifier {
       'tpl_stopsAway': 'பேருந்து {count} நிறுத்தங்கள் தொலைவில் உள்ளது.',
       'tpl_fallback': 'மன்னிக்கவும், புரியவில்லை. பேருந்து எங்கே உள்ளது என்று அல்லது எப்போது வரும் என்று கேளுங்கள்.',
       'tpl_error': 'மன்னிக்கவும், தற்போது தகவலைப் பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+      'tpl_voice_no_internet': 'இணைய இணைப்பு இல்லை. உங்கள் நெட்வொர்க்கைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
+      'tpl_voice_unauthorized': 'நீங்கள் உள்நுழையவில்லை. இந்த பேருந்தைக் கண்காணிக்க மீண்டும் உள்நுழையவும்.',
+      'tpl_voice_forbidden': 'இந்த பேருந்து உங்கள் கணக்குடன் இணைக்கப்படவில்லை.',
+      'tpl_voice_no_location': 'பேருந்து இன்னும் நேரலை இருப்பிடத்தைப் பகிரத் தொடங்கவில்லை. சிறிது நேரம் கழித்து மீண்டும் பார்க்கவும்.',
+      'tpl_voice_server_error': 'சர்வரில் பிழை ஏற்பட்டது. சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.',
       
       // Parent Login UI Keys
       'login_title': 'என் பேருந்து',
