@@ -301,8 +301,19 @@ class _BusCard extends StatelessWidget {
                   color: LIGHT_BLUE,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.directions_bus,
-                    color: PRIMARY_BLUE, size: 28),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/icon/icon.png',
+                    width: 28,
+                    height: 28,
+                    errorBuilder: (ctx, err, stack) => const Icon(
+                      Icons.directions_bus,
+                      color: PRIMARY_BLUE,
+                      size: 28,
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(

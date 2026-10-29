@@ -318,11 +318,23 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.directions_bus, color: Colors.white, size: 18),
-                          SizedBox(width: 6),
-                          Text(
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.asset(
+                              'assets/icon/icon.png',
+                              width: 18,
+                              height: 18,
+                              errorBuilder: (ctx, err, stack) => const Icon(
+                                Icons.directions_bus,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
                             'Find My Bus Voice',
                             style: TextStyle(
                               color: Colors.white,

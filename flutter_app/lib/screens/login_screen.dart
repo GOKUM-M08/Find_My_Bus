@@ -68,8 +68,19 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.directions_bus,
-                  size: 64, color: Color(0xFF1E6BFF)),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/icon/icon.png',
+                  width: 64,
+                  height: 64,
+                  errorBuilder: (ctx, err, stack) => const Icon(
+                    Icons.directions_bus,
+                    size: 64,
+                    color: Color(0xFF1E6BFF),
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               const Text('Find My Bus',
                   style: TextStyle(

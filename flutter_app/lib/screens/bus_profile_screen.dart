@@ -426,7 +426,19 @@ class _BusProfileScreenState extends State<BusProfileScreen> {
             ),
             width: 40,
             height: 40,
-            child: const Icon(Icons.directions_bus_filled, color: kPrimaryBlue, size: 32),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/icon/icon.png',
+                width: 32,
+                height: 32,
+                errorBuilder: (ctx, err, stack) => const Icon(
+                  Icons.directions_bus_filled,
+                  color: kPrimaryBlue,
+                  size: 32,
+                ),
+              ),
+            ),
           ),
         );
       }

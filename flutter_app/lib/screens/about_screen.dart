@@ -54,7 +54,19 @@ class AboutScreen extends StatelessWidget {
                         color: LIGHT_BLUE,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.directions_bus_rounded, size: 56, color: PRIMARY_BLUE),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.asset(
+                          'assets/icon/icon.png',
+                          width: 56,
+                          height: 56,
+                          errorBuilder: (ctx, err, stack) => const Icon(
+                            Icons.directions_bus_rounded,
+                            size: 56,
+                            color: PRIMARY_BLUE,
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
