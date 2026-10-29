@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bustrack/services/api_client.dart';
 import 'package:bustrack/services/session_store.dart';
 
@@ -36,6 +37,12 @@ class InMemorySessionStore extends SessionStore {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('SessionController Logic', () {
     test('restore with empty store results in loggedOut state', () async {
       final store = InMemorySessionStore();

@@ -5,6 +5,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import '../screens/config.dart';
 import 'language_service.dart';
+import 'session_store.dart';
 
 enum BusIntent { location, eta, delay, stopsAway, unknown }
 
@@ -244,17 +245,17 @@ class VoiceAssistantService {
       final queryParams = stopId != null ? '?stop_id=$stopId' : '';
       switch (intent) {
         case BusIntent.location:
-          final data = await _get('/buses/$busId/location');
+          final data = await _get('/api/parent/bus/$busId/location');
           final landmark = data['nearest_landmark'] ?? data['stop_name'] ?? 'Main Gate';
           return _template('tpl_location', {'place': landmark}, langCode: langCode);
 
         case BusIntent.eta:
-          final data = await _get('/buses/$busId/eta$queryParams');
+          final data = await _get('/api/parent/bus/$busId/eta$queryParams');
           final minutes = data['eta_minutes'] ?? 0;
           return _template('tpl_eta', {'minutes': '$minutes'}, langCode: langCode);
 
         case BusIntent.delay:
-          final data = await _get('/buses/$busId/status');
+          final data = await _get('/api/parent/bus/$busId/status');
           final isLate = data['is_late'] == true;
           final delayMins = data['delay_minutes'] ?? 0;
           return isLate
@@ -262,7 +263,7 @@ class VoiceAssistantService {
               : _template('tpl_onTime', {}, langCode: langCode);
 
         case BusIntent.stopsAway:
-          final data = await _get('/buses/$busId/stops-away$queryParams');
+          final data = await _get('/api/parent/bus/$busId/stops-away$queryParams');
           final count = data['stops_away'] ?? 0;
           return _template('tpl_stopsAway', {'count': '$count'}, langCode: langCode);
 
@@ -278,7 +279,12 @@ class VoiceAssistantService {
   Future<Map<String, dynamic>> _get(String path) async {
     final url = Uri.parse('$kBackendBaseUrl$path');
     debugPrint('[Voice Assistant GET] $url');
-    final res = await http.get(url).timeout(const Duration(seconds: 8));
+    final token = await SessionStore.instance.getToken();
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+    final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 8));
     if (res.statusCode != 200) {
       throw Exception('Backend error ${res.statusCode}');
     }

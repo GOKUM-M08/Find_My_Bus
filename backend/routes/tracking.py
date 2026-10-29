@@ -285,7 +285,7 @@ async def check_and_notify_parents(bus_id: str):
                     topic = f"bus_{bus_id}_stop_{stop_id}"
                     stop_name = stop.get("stop_name", "your stop")
                     minutes = eta_data.get("minutes", 5)
-                    message = f"Bus is 2 stops away from {stop_name}! Arriving in ~{minutes} min."
+                    message = f"Bus is {stops_away} stop{'s' if stops_away > 1 else ''} away from {stop_name}! Arriving in ~{minutes} min."
                     try:
                         send_bus_notification(
                             topic=topic,

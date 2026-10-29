@@ -1,16 +1,17 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart' hide Path;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 
-import 'config.dart';
+import '../services/api_client.dart';
+import '../services/language_service.dart';
 import '../services/notification_service.dart';
+import '../services/session_store.dart';
 import '../widgets/voice_assistant_sheet.dart';
 
-// Palette matching home_screen.dart & main.dart
+// Palette matching parent screens
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
 const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
 const Color LIGHT_BLUE = Color(0xFFE8F0FE);
@@ -33,38 +34,36 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final MapController _mapController = MapController();
+  final LanguageService _languageService = LanguageService();
+
   Marker? _busMarker;
   List<LatLng> _routePoints = [];
   List<Marker> _stopMarkers = [];
   List<Map<String, dynamic>> _rawStops = [];
   String _routeName = '';
 
-  StreamSubscription? _liveLocationSub;
   StreamSubscription? _fcmSub;
+  Timer? _pollTimer;
+  Timer? _etaTimer;
 
   LatLng _currentBusLocation = const LatLng(13.0827, 80.2707);
   double _busSpeed = 0;
   String _eta = "Calculating...";
   int _stopsAway = 0;
-  Timer? _etaTimer;
 
   bool _isLive = false;
-  Timer? _liveCheckTimer;
-
-  final supabase = Supabase.instance.client;
+  bool _isReconnecting = false;
+  int _pollIntervalSeconds = 5;
+  bool _isScreenVisible = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadRoute();
-    _subscribeToLiveLocation();
-    _loadInitialLocation();
-    _checkLiveStatus();
-    _liveCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _checkLiveStatus();
-    });
+    WidgetsBinding.instance.addObserver(this);
+    _languageService.addListener(_onLanguageChanged);
 
     _fcmSub = NotificationService().onForegroundMessage.listen((message) {
       if (!mounted) return;
@@ -95,98 +94,199 @@ class _TrackingScreenState extends State<TrackingScreen>
       );
     });
 
-    _initStopNotification();
-  }
-
-  Future<void> _initStopNotification() async {
-    if (widget.stopId != null) {
-      await NotificationService().switchSelectedStop(widget.busId, widget.stopId!);
-      _fetchETA(widget.stopId!);
-      _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        _fetchETA(widget.stopId!);
-      });
-    } else {
-      final persistedStopId = await NotificationService().getSelectedStopId(widget.busId);
-      if (persistedStopId != null) {
-        _fetchETA(persistedStopId);
-        _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-          _fetchETA(persistedStopId);
-        });
-      } else {
-        _eta = "Select a stop for ETA";
-      }
-    }
-  }
-
-  Future<void> _checkLiveStatus() async {
-    final result = await supabase
-        .from('live_location')
-        .select('timestamp')
-        .eq('bus_id', widget.busId)
-        .maybeSingle();
-
-    bool live = false;
-    if (result != null && result['timestamp'] != null) {
-      final lastUpdate = DateTime.parse(result['timestamp']).toUtc();
-      final secondsAgo =
-          DateTime.now().toUtc().difference(lastUpdate).inSeconds;
-      live = secondsAgo < 60;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _isLive = live;
-      _updateBusMarker();
-      if (!live && widget.stopId != null) {
-        _eta = "Bus offline";
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadRoute();
+      _pollLiveLocation();
+      _schedulePoll();
+      _initETA();
     });
   }
 
-  Future<void> _loadInitialLocation() async {
-    final response = await supabase
-        .from('live_location')
-        .select()
-        .eq('bus_id', widget.busId)
-        .maybeSingle();
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _languageService.removeListener(_onLanguageChanged);
+    _fcmSub?.cancel();
+    _pollTimer?.cancel();
+    _etaTimer?.cancel();
+    super.dispose();
+  }
 
-    if (response != null) {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _isScreenVisible = true;
+      _schedulePoll(immediate: true);
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _isScreenVisible = false;
+      _pollTimer?.cancel();
+    }
+  }
+
+  void _onLanguageChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _schedulePoll({bool immediate = false}) {
+    _pollTimer?.cancel();
+    if (!_isScreenVisible || !mounted) return;
+
+    if (immediate) {
+      _pollLiveLocation();
+    } else {
+      _pollTimer = Timer(Duration(seconds: _pollIntervalSeconds), () async {
+        await _pollLiveLocation();
+        _schedulePoll();
+      });
+    }
+  }
+
+  Future<void> _initETA() async {
+    final targetStopId = widget.stopId;
+    if (targetStopId != null && targetStopId.isNotEmpty) {
+      _fetchETA(targetStopId);
+      _etaTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        _fetchETA(targetStopId);
+      });
+    } else {
       setState(() {
-        _currentBusLocation = LatLng(
-          response['latitude'],
-          response['longitude'],
-        );
-        _busSpeed = response['speed']?.toDouble() ?? 0;
-        _updateBusMarker();
+        _eta = "Select a stop for ETA";
       });
     }
   }
 
   Future<void> _loadRoute() async {
-    final routes = await supabase
-        .from('routes')
-        .select('*, stops(*)')
-        .eq('bus_id', widget.busId)
-        .maybeSingle();
+    if (!mounted) return;
+    final api = context.read<SessionController>().apiClient;
 
-    if (routes != null && routes['stops'] != null) {
-      List<LatLng> routePoints = [];
+    try {
+      final res = await api.get('/api/parent/bus/${widget.busId}/route');
+      if (res is List && res.isNotEmpty) {
+        final route = res[0];
+        if (route is Map && route['stops'] is List) {
+          final stops = List<Map<String, dynamic>>.from(route['stops']);
+          _rawStops = stops;
+          _routeName = route['route_name']?.toString() ?? 'School Route';
 
-      final stops = List<Map<String, dynamic>>.from(routes['stops']);
-      stops.sort((a, b) => (a['stop_order'] as int).compareTo(b['stop_order'] as int));
-      _rawStops = stops;
-      _routeName = routes['route_name'] ?? 'School Route';
+          final points = <LatLng>[];
+          for (final stop in stops) {
+            final lat = (stop['latitude'] as num?)?.toDouble() ?? 0.0;
+            final lon = (stop['longitude'] as num?)?.toDouble() ?? 0.0;
+            if (lat != 0.0 && lon != 0.0) {
+              points.add(LatLng(lat, lon));
+            }
+          }
 
-      for (var stop in stops) {
-        LatLng pos = LatLng(stop['latitude'], stop['longitude']);
-        routePoints.add(pos);
+          if (!mounted) return;
+          setState(() {
+            _routePoints = points;
+            _rebuildStopMarkers();
+            _updateBusMarker();
+          });
+
+          if (points.isNotEmpty && _currentBusLocation.latitude == 13.0827) {
+            _currentBusLocation = points.first;
+            _updateBusMarker();
+          }
+        }
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.kind == ApiExceptionKind.unauthorized) {
+        context.read<SessionController>().logout(reason: 'Please log in again');
+      } else if (e.kind == ApiExceptionKind.forbidden) {
+        setState(() {
+          _errorMessage = _languageService.getText('bus_not_linked');
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pollLiveLocation() async {
+    if (!mounted || !_isScreenVisible) return;
+    final session = context.read<SessionController>();
+    final api = session.apiClient;
+
+    try {
+      final locRes = await api.get('/api/parent/bus/${widget.busId}/live');
+      if (!mounted) return;
+
+      if (locRes == null || locRes is! Map) {
+        setState(() {
+          _isLive = false;
+          _isReconnecting = false;
+          _pollIntervalSeconds = 5;
+          _updateBusMarker();
+        });
+        return;
       }
 
+      final rawTimestamp = locRes['timestamp'];
+      bool live = false;
+      if (rawTimestamp != null) {
+        final lastUpdate = DateTime.parse(rawTimestamp.toString()).toUtc();
+        final secondsAgo = DateTime.now().toUtc().difference(lastUpdate).inSeconds;
+        live = secondsAgo < 60;
+      }
+
+      final lat = (locRes['latitude'] as num?)?.toDouble();
+      final lon = (locRes['longitude'] as num?)?.toDouble();
+      final speed = (locRes['speed'] as num?)?.toDouble() ?? 0.0;
+
       setState(() {
-        _routePoints = routePoints;
-        _rebuildStopMarkers();
+        _isLive = live;
+        _isReconnecting = false;
+        _pollIntervalSeconds = 5; // reset backoff on success
+        if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
+          _currentBusLocation = LatLng(lat, lon);
+          _busSpeed = speed;
+        }
+        if (!live && widget.stopId != null) {
+          _eta = "Bus offline";
+        }
         _updateBusMarker();
       });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.kind == ApiExceptionKind.unauthorized) {
+        session.logout(reason: 'Please log in again');
+        return;
+      } else if (e.kind == ApiExceptionKind.forbidden) {
+        setState(() {
+          _errorMessage = _languageService.getText('bus_not_linked');
+        });
+        return;
+      }
+      _handlePollBackoff();
+    } catch (_) {
+      _handlePollBackoff();
+    }
+  }
+
+  void _handlePollBackoff() {
+    if (!mounted) return;
+    setState(() {
+      _isReconnecting = true;
+      _pollIntervalSeconds = min(_pollIntervalSeconds * 2, 30);
+    });
+  }
+
+  Future<void> _fetchETA(String stopId) async {
+    if (!mounted) return;
+    final api = context.read<SessionController>().apiClient;
+    try {
+      final data = await api.get('/api/parent/bus/${widget.busId}/eta/$stopId');
+      if (!mounted) return;
+      if (data is Map) {
+        setState(() {
+          _eta = data['eta']?.toString() ?? 'Calculating...';
+          _stopsAway = (data['stops_away'] as num?)?.toInt() ?? 0;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _eta = 'Unavailable');
+      }
     }
   }
 
@@ -196,15 +296,20 @@ class _TrackingScreenState extends State<TrackingScreen>
     List<Marker> stopMarkers = [];
     for (int i = 0; i < _rawStops.length; i++) {
       final stop = _rawStops[i];
-      final pos = LatLng(stop['latitude'], stop['longitude']);
+      final pos = LatLng(
+        (stop['latitude'] as num?)?.toDouble() ?? 0.0,
+        (stop['longitude'] as num?)?.toDouble() ?? 0.0,
+      );
+      if (pos.latitude == 0.0 && pos.longitude == 0.0) continue;
+
       final isTargetStop = widget.stopId != null && stop['id'].toString() == widget.stopId;
       final stopNumber = i + 1;
 
       stopMarkers.add(
         Marker(
           point: pos,
-          width: 32,
-          height: 32,
+          width: 34,
+          height: 34,
           alignment: Alignment.center,
           child: GestureDetector(
             onTap: () => _showStopDetailsSheet(stop, stopNumber, isTargetStop),
@@ -241,10 +346,21 @@ class _TrackingScreenState extends State<TrackingScreen>
                   CircleAvatar(
                     radius: 22,
                     backgroundColor: isTarget ? Colors.red.shade50 : LIGHT_BLUE,
-                    child: Icon(
-                      isTarget ? Icons.star_rounded : Icons.directions_bus_rounded,
-                      color: isTarget ? Colors.red.shade600 : PRIMARY_BLUE,
-                    ),
+                    child: isTarget
+                        ? const Icon(Icons.star_rounded, color: Color(0xFFDC2626), size: 24)
+                        : ClipOval(
+                            child: Image.asset(
+                              'assets/icon/icon.png',
+                              width: 22,
+                              height: 22,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.directions_bus_rounded,
+                                color: PRIMARY_BLUE,
+                                size: 20,
+                              ),
+                            ),
+                          ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -291,33 +407,6 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  void _subscribeToLiveLocation() {
-    _liveLocationSub = supabase
-        .from('live_location')
-        .stream(primaryKey: ['id'])
-        .eq('bus_id', widget.busId)
-        .listen((rows) {
-      if (rows.isEmpty) return;
-      final row = rows.first;
-
-      if (row['latitude'] == null || row['longitude'] == null) return;
-
-      setState(() {
-        _currentBusLocation = LatLng(
-          (row['latitude'] as num).toDouble(),
-          (row['longitude'] as num).toDouble(),
-        );
-        _busSpeed = (row['speed'] as num?)?.toDouble() ?? 0;
-        _updateBusMarker();
-        _mapController.move(_currentBusLocation, _mapController.camera.zoom);
-      });
-
-      if (widget.stopId != null) {
-        _fetchETA(widget.stopId!);
-      }
-    });
-  }
-
   void _updateBusMarker() {
     final isMoving = _isLive && _busSpeed > 1;
     final statusText = !_isLive
@@ -338,14 +427,11 @@ class _TrackingScreenState extends State<TrackingScreen>
           alignment: Alignment.center,
           clipBehavior: Clip.none,
           children: [
-            // Vehicle Pin Avatar anchored precisely at geometric center (24, 24)
             _BusVehicleAvatar(
               isLive: _isLive,
               isMoving: isMoving,
               statusColor: statusColor,
             ),
-
-            // Speech Bubble Callout Card floated above avatar via clipBehavior
             Positioned(
               bottom: 46,
               child: _BusCalloutCard(
@@ -385,7 +471,19 @@ class _TrackingScreenState extends State<TrackingScreen>
                   CircleAvatar(
                     radius: 24,
                     backgroundColor: LIGHT_BLUE,
-                    child: const Icon(Icons.directions_bus_rounded, color: PRIMARY_BLUE, size: 28),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icon/icon.png',
+                        width: 28,
+                        height: 28,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.directions_bus_rounded,
+                          color: PRIMARY_BLUE,
+                          size: 26,
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -405,10 +503,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                               decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              statusText,
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: statusColor),
-                            ),
+                            Text(statusText, style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ],
@@ -435,36 +530,24 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  Future<void> _fetchETA(String stopId) async {
-    try {
-      final response = await http.get(Uri.parse(
-        '$kBackendBaseUrl/api/tracking'
-        '/${widget.busId}/eta/$stopId',
-      ));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _eta = data['eta'] ?? 'Calculating...';
-          _stopsAway = data['stops_away'] ?? 0;
-        });
-      }
-    } catch (e) {
-      setState(() => _eta = 'Unavailable');
-    }
-  }
-
-  @override
-  void dispose() {
-    _liveLocationSub?.cancel();
-    _fcmSub?.cancel();
-    _etaTimer?.cancel();
-    _liveCheckTimer?.cancel();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (_errorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(backgroundColor: PRIMARY_BLUE, foregroundColor: Colors.white),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -479,6 +562,16 @@ class _TrackingScreenState extends State<TrackingScreen>
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.bustrack',
               ),
+              if (_routePoints.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _routePoints,
+                      strokeWidth: 4.5,
+                      color: SECONDARY_BLUE.withValues(alpha: 0.85),
+                    ),
+                  ],
+                ),
               MarkerLayer(
                 markers: [
                   ..._stopMarkers,
@@ -488,17 +581,51 @@ class _TrackingScreenState extends State<TrackingScreen>
             ],
           ),
 
-          // Top Left Floating Back/Close Circular Button (matching screenshot (X))
+          // Reconnecting Banner
+          if (_isReconnecting)
+            Positioned(
+              top: 40,
+              left: 20,
+              right: 80,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade800,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _languageService.getText('reconnecting'),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Close / Back Button
           Positioned(
             top: 40,
-            left: 16,
+            left: 14,
             child: GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Container(
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.55),
+                  color: Colors.black.withValues(alpha: 0.55),
                   shape: BoxShape.circle,
                   boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
                 ),
@@ -507,7 +634,7 @@ class _TrackingScreenState extends State<TrackingScreen>
             ),
           ),
 
-          // Floating Map Camera & Voice Controls
+          // Floating Controls
           Positioned(
             right: 14,
             top: 40,
@@ -561,7 +688,7 @@ class _TrackingScreenState extends State<TrackingScreen>
             ),
           ),
 
-          // Bottom Template Status Bar (matching screenshot layout)
+          // Bottom Status Bar
           Positioned(
             bottom: 0,
             left: 0,
@@ -573,7 +700,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
+                    color: Colors.black.withValues(alpha: 0.12),
                     blurRadius: 10,
                     offset: const Offset(0, -3),
                   ),
@@ -600,47 +727,59 @@ class _TrackingScreenState extends State<TrackingScreen>
                             color: Color(0xFF1E293B),
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          widget.stopId != null ? 'ETA: $_eta • $_stopsAway stops away' : 'Updated few seconds ago',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: !_isLive
+                                    ? Colors.grey.shade500
+                                    : (_busSpeed > 1 ? const Color(0xFF10B981) : const Color(0xFFF59E0B)),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                widget.stopId != null ? 'ETA: $_eta' : 'Bus ${widget.busNumber}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-
-                  // Floating Circular Refresh Action Button (matching bottom right blue circle button in screenshot)
+                  const SizedBox(width: 12),
                   GestureDetector(
-                    onTap: () {
-                      _checkLiveStatus();
-                      if (widget.stopId != null) _fetchETA(widget.stopId!);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Refreshing live location...'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
+                    onTap: () => _showBusDetailsSheet(),
                     child: Container(
-                      width: 48,
-                      height: 48,
+                      padding: const EdgeInsets.all(10),
                       decoration: const BoxDecoration(
-                        color: PRIMARY_BLUE,
+                        color: LIGHT_BLUE,
                         shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
                       ),
-                      child: const Icon(Icons.refresh_rounded, color: Colors.white, size: 24),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/icon/icon.png',
+                          width: 24,
+                          height: 24,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.directions_bus_rounded,
+                            color: PRIMARY_BLUE,
+                            size: 24,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -651,93 +790,6 @@ class _TrackingScreenState extends State<TrackingScreen>
       ),
     );
   }
-}
-
-// 💬 Floating Speech Bubble Callout Card above Bus Pin (matching template screenshot)
-class _BusCalloutCard extends StatelessWidget {
-  final String busNumber;
-  final String routeName;
-  final String statusText;
-  final Color statusColor;
-
-  const _BusCalloutCard({
-    required this.busNumber,
-    required this.routeName,
-    required this.statusText,
-    required this.statusColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 8,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Bus $busNumber: $routeName',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                statusText,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: statusColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Speech Bubble Pointer Arrow Tip pointing down
-        CustomPaint(
-          size: const Size(12, 6),
-          painter: _TrianglePointerPainter(color: Colors.white),
-        ),
-      ],
-    );
-  }
-}
-
-class _TrianglePointerPainter extends CustomPainter {
-  final Color color;
-  _TrianglePointerPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..lineTo(size.width, 0)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _BusVehicleAvatar extends StatefulWidget {
@@ -792,7 +844,7 @@ class _BusVehicleAvatarState extends State<_BusVehicleAvatar>
                   height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: widget.statusColor.withOpacity(opacity * 0.35),
+                    color: widget.statusColor.withValues(alpha: opacity * 0.35),
                   ),
                 ),
               );
@@ -813,15 +865,69 @@ class _BusVehicleAvatarState extends State<_BusVehicleAvatar>
               ),
             ],
           ),
-          child: const Center(
-            child: Icon(
-              Icons.directions_bus_rounded,
-              color: Colors.white,
-              size: 20,
+          child: Center(
+            child: ClipOval(
+              child: Image.asset(
+                'assets/icon/icon.png',
+                width: 22,
+                height: 22,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.directions_bus_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _BusCalloutCard extends StatelessWidget {
+  final String busNumber;
+  final String routeName;
+  final String statusText;
+  final Color statusColor;
+
+  const _BusCalloutCard({
+    required this.busNumber,
+    required this.routeName,
+    required this.statusText,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Bus $busNumber',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          Text(
+            statusText,
+            style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -855,11 +961,16 @@ class _StopNodeMarker extends StatelessWidget {
         ],
       ),
       child: Center(
-        child: Icon(
-          isTarget ? Icons.star_rounded : Icons.directions_bus_rounded,
-          color: Colors.white,
-          size: 14,
-        ),
+        child: isTarget
+            ? const Icon(Icons.star_rounded, color: Colors.white, size: 16)
+            : Text(
+                '$stopNumber',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
       ),
     );
   }

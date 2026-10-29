@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'screens/find_bus_screen.dart';
+import 'screens/parent_home_screen.dart';
 import 'screens/phone_login_screen.dart';
 import 'services/notification_service.dart';
 import 'services/session_store.dart';
@@ -194,7 +195,7 @@ class _ParentAppHomeWrapperState extends State<ParentAppHomeWrapper> {
               ),
             ),
           ),
-        const Expanded(child: FindBusScreen()),
+        const Expanded(child: ParentHomeScreen()),
       ],
     );
   }

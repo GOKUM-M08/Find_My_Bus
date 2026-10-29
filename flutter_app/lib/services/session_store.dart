@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
+import 'notification_service.dart';
 
 class StudentInfo {
   final String studentId;
@@ -125,6 +126,8 @@ class SessionState {
 }
 
 class SessionStore {
+  static final SessionStore instance = SessionStore();
+
   final FlutterSecureStorage _storage;
 
   static const String _keyToken = 'parent_jwt_token';
@@ -205,6 +208,9 @@ class SessionController extends ChangeNotifier {
         _token = token;
         _state = SessionState.loggedIn(profile);
         notifyListeners();
+        try {
+          NotificationService().syncSubscriptions(profile.students);
+        } catch (_) {}
       } else {
         _token = null;
         _state = const SessionState.loggedOut();
@@ -238,6 +244,11 @@ class SessionController extends ChangeNotifier {
       _state = SessionState.loggedIn(profile);
       _isOffline = false;
       notifyListeners();
+      try {
+        await NotificationService().syncSubscriptions(profile.students);
+      } catch (e) {
+        debugPrint('[SessionController] syncSubscriptions failed on login: $e');
+      }
       return profile;
     } else {
       throw const ApiException(
@@ -257,6 +268,11 @@ class SessionController extends ChangeNotifier {
         _state = SessionState.loggedIn(profile);
         _isOffline = false;
         notifyListeners();
+        try {
+          await NotificationService().syncSubscriptions(profile.students);
+        } catch (e) {
+          debugPrint('[SessionController] syncSubscriptions failed on refresh: $e');
+        }
       }
     } on ApiException catch (e) {
       if (e.kind == ApiExceptionKind.unauthorized) {

@@ -268,3 +268,45 @@ def test_voice_assistant_parent_endpoints(mock_supabase):
             res_wrong = client.get(f"/api/parent/bus/bus-999/{endpoint}", headers=headers)
             assert res_wrong.status_code == 403
             assert "not linked to your account" in res_wrong.json()["detail"]
+
+
+def test_check_and_notify_parents_message_text():
+    import asyncio
+
+    async def _run_test():
+        from routes.tracking import check_and_notify_parents, _notified_stops
+        _notified_stops.clear()
+
+        with patch("routes.tracking.redis_client") as mock_redis, \
+             patch("routes.tracking.supabase") as mock_sb, \
+             patch("routes.tracking.get_ordered_stops") as mock_stops, \
+             patch("routes.tracking.get_eta") as mock_eta, \
+             patch("routes.tracking.send_bus_notification") as mock_send:
+
+            mock_redis.hgetall.return_value = {}
+            mock_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+                {"bus_number": "42", "id": "route-1"}
+            ]
+            mock_stops.return_value = [{"id": "st-1", "stop_name": "Park Gate"}]
+
+            # Test stops_away = 1 -> "Bus is 1 stop away from Park Gate! Arriving in ~3 min."
+            mock_eta.return_value = {"stops_away": 1, "minutes": 3}
+            await check_and_notify_parents("bus-101")
+
+            assert mock_send.call_count == 1
+            call_kwargs = mock_send.call_args.kwargs
+            assert call_kwargs["message"] == "Bus is 1 stop away from Park Gate! Arriving in ~3 min."
+            assert call_kwargs["topic"] == "bus_bus-101_stop_st-1"
+
+            # Clear and test stops_away = 2 -> "Bus is 2 stops away from Park Gate! Arriving in ~6 min."
+            _notified_stops.clear()
+            mock_eta.return_value = {"stops_away": 2, "minutes": 6}
+            await check_and_notify_parents("bus-101")
+
+            assert mock_send.call_count == 2
+            call_kwargs2 = mock_send.call_args.kwargs
+            assert call_kwargs2["message"] == "Bus is 2 stops away from Park Gate! Arriving in ~6 min."
+
+    asyncio.run(_run_test())
+
+
