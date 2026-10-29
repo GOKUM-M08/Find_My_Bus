@@ -42,6 +42,8 @@ class _StopsScreenState extends State<StopsScreen> with WidgetsBindingObserver {
   bool _busIsLive = false;
   bool _isReconnecting = false;
   String _tripDirection = 'morning';
+  double? _latestBusLat;
+  double? _latestBusLon;
 
   Timer? _pollTimer;
   int _pollIntervalSeconds = 5;
@@ -216,6 +218,11 @@ class _StopsScreenState extends State<StopsScreen> with WidgetsBindingObserver {
         }
       }
 
+      if (busLat != 0.0 && busLon != 0.0) {
+        _latestBusLat = busLat;
+        _latestBusLon = busLon;
+      }
+
       setState(() {
         _currentStopIndex = nearestIndex;
         _busIsLive = true;
@@ -266,6 +273,8 @@ class _StopsScreenState extends State<StopsScreen> with WidgetsBindingObserver {
           busId: widget.busId,
           busNumber: widget.busNumber,
           stopId: stopId ?? widget.studentStopId,
+          initialBusLat: _latestBusLat,
+          initialBusLon: _latestBusLon,
         ),
       ),
     );
@@ -326,6 +335,11 @@ class _StopsScreenState extends State<StopsScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _loadInitialData,
+          ),
           IconButton(
             tooltip: languageService.getText('voice_assistant_title'),
             icon: const Icon(Icons.mic_rounded),

@@ -21,12 +21,16 @@ class TrackingScreen extends StatefulWidget {
   final String busId;
   final String busNumber;
   final String? stopId;
+  final double? initialBusLat;
+  final double? initialBusLon;
 
   const TrackingScreen({
     super.key,
     required this.busId,
     required this.busNumber,
     this.stopId,
+    this.initialBusLat,
+    this.initialBusLon,
   });
 
   @override
@@ -39,7 +43,6 @@ class _TrackingScreenState extends State<TrackingScreen>
   final LanguageService _languageService = LanguageService();
 
   Marker? _busMarker;
-  List<LatLng> _routePoints = [];
   List<Marker> _stopMarkers = [];
   List<Map<String, dynamic>> _rawStops = [];
   String _routeName = '';
@@ -55,6 +58,8 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   bool _isLive = false;
   bool _isReconnecting = false;
+  bool _hasAutoNavigated = false;
+  bool _isRefreshing = false;
   int _pollIntervalSeconds = 5;
   bool _isScreenVisible = true;
   String? _errorMessage;
@@ -62,6 +67,12 @@ class _TrackingScreenState extends State<TrackingScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.initialBusLat != null &&
+        widget.initialBusLon != null &&
+        widget.initialBusLat != 0.0 &&
+        widget.initialBusLon != 0.0) {
+      _currentBusLocation = LatLng(widget.initialBusLat!, widget.initialBusLon!);
+    }
     WidgetsBinding.instance.addObserver(this);
     _languageService.addListener(_onLanguageChanged);
 
@@ -179,7 +190,6 @@ class _TrackingScreenState extends State<TrackingScreen>
 
           if (!mounted) return;
           setState(() {
-            _routePoints = points;
             _rebuildStopMarkers();
             _updateBusMarker();
           });
@@ -202,7 +212,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     } catch (_) {}
   }
 
-  Future<void> _pollLiveLocation() async {
+  Future<void> _pollLiveLocation({bool immediateMove = false}) async {
     if (!mounted || !_isScreenVisible) return;
     final session = context.read<SessionController>();
     final api = session.apiClient;
@@ -238,8 +248,17 @@ class _TrackingScreenState extends State<TrackingScreen>
         _isReconnecting = false;
         _pollIntervalSeconds = 5; // reset backoff on success
         if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
-          _currentBusLocation = LatLng(lat, lon);
+          final newLoc = LatLng(lat, lon);
+          _currentBusLocation = newLoc;
           _busSpeed = speed;
+
+          // Automatically navigate / center to bus on initial entry or manual refresh
+          if (!_hasAutoNavigated || immediateMove) {
+            _hasAutoNavigated = true;
+            try {
+              _mapController.move(newLoc, 16.0);
+            } catch (_) {}
+          }
         }
         if (!live && widget.stopId != null) {
           _eta = "Bus offline";
@@ -260,6 +279,18 @@ class _TrackingScreenState extends State<TrackingScreen>
       _handlePollBackoff();
     } catch (_) {
       _handlePollBackoff();
+    }
+  }
+
+  Future<void> _refreshTracking() async {
+    setState(() => _isRefreshing = true);
+    await Future.wait([
+      _pollLiveLocation(immediateMove: true),
+      if (widget.stopId != null && widget.stopId!.isNotEmpty)
+        _fetchETA(widget.stopId!),
+    ]);
+    if (mounted) {
+      setState(() => _isRefreshing = false);
     }
   }
 
@@ -555,23 +586,13 @@ class _TrackingScreenState extends State<TrackingScreen>
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _currentBusLocation,
-              initialZoom: 14,
+              initialZoom: (widget.initialBusLat != null && widget.initialBusLon != null) ? 16.0 : 14.0,
             ),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.bustrack',
               ),
-              if (_routePoints.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _routePoints,
-                      strokeWidth: 4.5,
-                      color: SECONDARY_BLUE.withValues(alpha: 0.85),
-                    ),
-                  ],
-                ),
               MarkerLayer(
                 markers: [
                   ..._stopMarkers,
@@ -657,12 +678,29 @@ class _TrackingScreenState extends State<TrackingScreen>
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
+                  heroTag: 'refresh_tracking',
+                  backgroundColor: Colors.white,
+                  foregroundColor: PRIMARY_BLUE,
+                  elevation: 4,
+                  tooltip: 'Refresh',
+                  onPressed: _isRefreshing ? null : _refreshTracking,
+                  child: _isRefreshing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: PRIMARY_BLUE),
+                        )
+                      : const Icon(Icons.refresh_rounded, size: 20),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
                   heroTag: 'recenter_bus',
                   backgroundColor: Colors.white,
                   foregroundColor: PRIMARY_BLUE,
                   elevation: 4,
+                  tooltip: 'Navigate to bus',
                   onPressed: () {
-                    _mapController.move(_currentBusLocation, 15.5);
+                    _mapController.move(_currentBusLocation, 16.0);
                   },
                   child: const Icon(Icons.my_location_rounded, size: 20),
                 ),
@@ -672,11 +710,19 @@ class _TrackingScreenState extends State<TrackingScreen>
                   backgroundColor: Colors.white,
                   foregroundColor: PRIMARY_BLUE,
                   elevation: 4,
+                  tooltip: 'Fit route',
                   onPressed: () {
-                    if (_routePoints.isNotEmpty) {
+                    if (_stopMarkers.isNotEmpty) {
+                      final allPoints = [
+                        _currentBusLocation,
+                        ..._rawStops.map((s) => LatLng(
+                              (s['latitude'] as num).toDouble(),
+                              (s['longitude'] as num).toDouble(),
+                            )),
+                      ];
                       _mapController.fitCamera(
                         CameraFit.bounds(
-                          bounds: LatLngBounds.fromPoints([_currentBusLocation, ..._routePoints]),
+                          bounds: LatLngBounds.fromPoints(allPoints),
                           padding: const EdgeInsets.all(50),
                         ),
                       );
