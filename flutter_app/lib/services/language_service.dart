@@ -97,6 +97,22 @@ class LanguageService extends ChangeNotifier {
       'tpl_stopsAway': 'The bus is {count} stops away.',
       'tpl_fallback': "Sorry, I didn't understand that. Try asking where the bus is, or when it will arrive.",
       'tpl_error': 'Sorry, I could not fetch the bus details right now. Please try again.',
+      
+      // Parent Login UI Keys
+      'login_title': 'Find My Bus',
+      'login_subtitle': 'Enter the mobile number you gave your school',
+      'phone_hint': 'Mobile Number',
+      'continue_btn': 'Continue',
+      'server_waking_up': 'Waking up the server, please wait...',
+      'login_helper': 'Use the same number the school has for you.',
+      'err_invalid_phone': 'Please enter a valid 10-digit mobile number',
+      'err_not_registered': 'This number is not registered with the school. Please contact your school',
+      'err_too_many_attempts': 'Too many wrong attempts. Please try again after 15 minutes',
+      'err_network': 'No internet connection. Please check and try again',
+      'err_timeout': 'The server is taking too long. Please try again',
+      'err_server': 'Something went wrong on our side. Please try again later',
+      'offline_banner': 'You are offline',
+      'please_login_again': 'Please log in again',
     },
     'ta': {
       'app_title': 'என் பேருந்து (Find My Bus)',
@@ -166,6 +182,22 @@ class LanguageService extends ChangeNotifier {
       'tpl_stopsAway': 'பேருந்து {count} நிறுத்தங்கள் தொலைவில் உள்ளது.',
       'tpl_fallback': 'மன்னிக்கவும், புரியவில்லை. பேருந்து எங்கே உள்ளது என்று அல்லது எப்போது வரும் என்று கேளுங்கள்.',
       'tpl_error': 'மன்னிக்கவும், தற்போது தகவலைப் பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+      
+      // Parent Login UI Keys
+      'login_title': 'என் பேருந்து',
+      'login_subtitle': 'பள்ளியில் நீங்கள் கொடுத்த கைபேசி எண்ணை உள்ளிடவும்',
+      'phone_hint': 'கைபேசி எண்',
+      'continue_btn': 'தொடரவும்',
+      'server_waking_up': 'சர்வர் இயங்குகிறது, சிறிது நேரம் காத்திருக்கவும்...',
+      'login_helper': 'பள்ளியில் பதிவு செய்த அதே எண்ணைப் பயன்படுத்தவும்.',
+      'err_invalid_phone': 'சரியான 10 இலக்க மொபைல் எண்ணை உள்ளிடவும்',
+      'err_not_registered': 'இந்த எண் பள்ளியில் பதிவு செய்யப்படவில்லை. உங்கள் பள்ளியைத் தொடர்பு கொள்ளவும்',
+      'err_too_many_attempts': 'அதிக தவறான முயற்சிகள். 15 நிமிடங்களுக்குப் பிறகு மீண்டும் முயற்சிக்கவும்',
+      'err_network': 'இணைய இணைப்பு இல்லை. சரிபார்த்து மீண்டும் முயற்சிக்கவும்',
+      'err_timeout': 'சர்வர் பதிலளிக்க அதிக நேரம் எடுக்கிறது. மீண்டும் முயற்சிக்கவும்',
+      'err_server': 'எங்கள் பக்கத்தில் பிழை ஏற்பட்டது. பின்னர் மீண்டும் முயற்சிக்கவும்',
+      'offline_banner': 'நீங்கள் ஆஃப்லைனில் உள்ளீர்கள்',
+      'please_login_again': 'மீண்டும் உள்நுழையவும்',
     },
   };
 

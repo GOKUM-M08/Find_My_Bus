@@ -1,30 +1,30 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:provider/provider.dart';
 import 'package:bustrack/main.dart';
+import 'package:bustrack/services/session_store.dart';
+import 'unit/session_controller_test.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const BusTrackApp());
+  testWidgets('App shows splash then phone login when not logged in', (tester) async {
+    final store = InMemorySessionStore();
+    final controller = SessionController(store: store);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SessionController>.value(
+        value: controller,
+        child: const BusTrackApp(),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // Initial state is loading -> shows SplashScreen
+    expect(find.byType(SplashScreen), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Call restore -> transitions to loggedOut
+    await controller.restore();
+    await tester.pumpAndSettle();
+
+    // Now shows login screen
+    expect(find.text('Find My Bus'), findsWidgets);
+    expect(find.text('Enter the mobile number you gave your school'), findsOneWidget);
   });
 }
