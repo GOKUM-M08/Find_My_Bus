@@ -8,6 +8,12 @@ from pydantic import BaseModel
 from jose import jwt, JWTError
 from database import supabase
 from routes.tracking import get_ordered_stops, get_eta, get_trip_direction
+from routes.buses import (
+    get_bus_location_summary,
+    get_eta_default,
+    get_bus_status,
+    get_stops_away,
+)
 
 router = APIRouter()
 
@@ -288,3 +294,27 @@ def bus_eta(bus_id: str, stop_id: str, parent: dict = Depends(current_parent)):
 def bus_trip_direction(bus_id: str, parent: dict = Depends(current_parent)):
     _require_bus(parent, bus_id)
     return get_trip_direction(bus_id)
+
+
+@router.get("/bus/{bus_id}/location")
+def bus_location(bus_id: str, parent: dict = Depends(current_parent)):
+    _require_bus(parent, bus_id)
+    return get_bus_location_summary(bus_id)
+
+
+@router.get("/bus/{bus_id}/eta")
+def bus_eta_voice(bus_id: str, stop_id: Optional[str] = None, parent: dict = Depends(current_parent)):
+    _require_bus(parent, bus_id)
+    return get_eta_default(bus_id, stop_id)
+
+
+@router.get("/bus/{bus_id}/status")
+def bus_status(bus_id: str, stop_id: Optional[str] = None, parent: dict = Depends(current_parent)):
+    _require_bus(parent, bus_id)
+    return get_bus_status(bus_id, stop_id)
+
+
+@router.get("/bus/{bus_id}/stops-away")
+def bus_stops_away(bus_id: str, stop_id: Optional[str] = None, parent: dict = Depends(current_parent)):
+    _require_bus(parent, bus_id)
+    return get_stops_away(bus_id, stop_id)

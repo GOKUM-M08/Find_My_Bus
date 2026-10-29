@@ -224,3 +224,47 @@ def test_websocket_token_and_bus_permission(mock_supabase):
     with client.websocket_connect(f"/ws/track/bus-101?token={valid_token}") as ws:
         # Connected successfully
         assert ws is not None
+
+
+@patch("routes.parent.supabase")
+def test_voice_assistant_parent_endpoints(mock_supabase):
+    _cache.clear()
+    mock_active = MagicMock()
+    mock_active.execute.return_value.data = [
+        {"id": "s1", "bus_id": "bus-101", "buses": {}, "stops": {}, "schools": {}}
+    ]
+    mock_supabase.table.return_value.select.return_value.or_.return_value = mock_active
+
+    valid_token = _create_token("9876543210")
+    headers = {"Authorization": f"Bearer {valid_token}"}
+
+    with patch("routes.parent.get_bus_location_summary", return_value={"nearest_landmark": "Stop A", "distance_km": 0.5}), \
+         patch("routes.parent.get_eta_default", return_value={"eta_minutes": 5, "eta": "5 min", "stops_away": 2}), \
+         patch("routes.parent.get_bus_status", return_value={"is_late": False, "delay_minutes": 0}), \
+         patch("routes.parent.get_stops_away", return_value={"stops_away": 2}):
+
+        # Test location
+        res = client.get("/api/parent/bus/bus-101/location", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["nearest_landmark"] == "Stop A"
+
+        # Test eta
+        res = client.get("/api/parent/bus/bus-101/eta", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["eta_minutes"] == 5
+
+        # Test status
+        res = client.get("/api/parent/bus/bus-101/status", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["is_late"] is False
+
+        # Test stops-away
+        res = client.get("/api/parent/bus/bus-101/stops-away", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["stops_away"] == 2
+
+        # Test 403 on another bus
+        for endpoint in ["location", "eta", "status", "stops-away"]:
+            res_wrong = client.get(f"/api/parent/bus/bus-999/{endpoint}", headers=headers)
+            assert res_wrong.status_code == 403
+            assert "not linked to your account" in res_wrong.json()["detail"]
