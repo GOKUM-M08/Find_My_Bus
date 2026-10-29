@@ -529,13 +529,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 : isLive
                     ? Colors.green.shade100
                     : Colors.grey.shade100,
-            child: Icon(
-              Icons.directions_bus,
-              color: isOverspeeding
-                  ? Colors.red
-                  : isLive
-                      ? Colors.green
-                      : Colors.grey,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/icon/icon.png',
+                width: 24,
+                height: 24,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.directions_bus,
+                  color: isOverspeeding
+                      ? Colors.red
+                      : isLive
+                          ? Colors.green
+                          : Colors.grey,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 14),

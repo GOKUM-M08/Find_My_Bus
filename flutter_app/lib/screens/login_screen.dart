@@ -61,8 +61,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Driver & Staff Portal'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: const Color(0xFF0F172A),
+      ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -82,12 +88,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text('Find My Bus',
+              const Text('Driver Portal',
                   style: TextStyle(
                       fontSize: 32, fontWeight: FontWeight.bold)),
-              const Text('Know where your child\'s bus is, always.',
+              const Text('Log in with your registered mobile number and OTP to start broadcasting live location.',
                   style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 48),
+              const SizedBox(height: 36),
               
               // Phone number field
               TextField(

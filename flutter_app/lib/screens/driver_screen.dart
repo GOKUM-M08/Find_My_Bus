@@ -247,7 +247,7 @@ class _DriverScreenState extends State<DriverScreen> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Location sent every 10 seconds. '
+                      'Location sent every 4 seconds. '
                       'Parents see your bus moving live on their map.',
                       style: TextStyle(color: Colors.white60, fontSize: 13),
                     ),
