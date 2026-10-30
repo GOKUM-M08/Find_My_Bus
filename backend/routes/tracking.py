@@ -175,14 +175,41 @@ def get_eta(bus_id: str, stop_id: str):
     Calculate ETA for a bus to reach a specific stop.
     Called by parent app to show arrival time. Respects current trip direction.
     """
-    # 1. Get live bus location from Redis
-    cached = redis_client.hgetall(f"bus:{bus_id}")
-    if not cached:
-        return {"eta": "Location not available", "stops_away": -1}
+    bus_lat = 0.0
+    bus_lon = 0.0
+    bus_speed = 20.0
 
-    bus_lat = float(cached.get("latitude", 0))
-    bus_lon = float(cached.get("longitude", 0))
-    bus_speed = float(cached.get("speed", 20))  # default 20 km/h
+    # 1. Try Redis cache first
+    try:
+        cached = redis_client.hgetall(f"bus:{bus_id}")
+        if cached and cached.get("latitude") and cached.get("longitude"):
+            bus_lat = float(cached.get("latitude", 0))
+            bus_lon = float(cached.get("longitude", 0))
+            bus_speed = float(cached.get("speed", 20))
+    except Exception:
+        pass
+
+    # Fallback to Supabase live_location table if Redis cache was empty
+    if not bus_lat or not bus_lon or (bus_lat == 0 and bus_lon == 0):
+        try:
+            if supabase:
+                result = (
+                    supabase.table("live_location")
+                    .select("latitude, longitude, speed, timestamp")
+                    .eq("bus_id", bus_id)
+                    .limit(1)
+                    .execute()
+                )
+                if result.data and len(result.data) > 0:
+                    loc = result.data[0]
+                    bus_lat = float(loc.get("latitude", 0) or 0)
+                    bus_lon = float(loc.get("longitude", 0) or 0)
+                    bus_speed = float(loc.get("speed", 20) or 20)
+        except Exception:
+            pass
+
+    if not bus_lat or not bus_lon or (bus_lat == 0 and bus_lon == 0):
+        return {"eta": "Location not available", "stops_away": -1}
 
     # 2. Get all stops for this bus route in current trip direction order
     stops = get_ordered_stops(bus_id)
@@ -212,26 +239,47 @@ def get_eta(bus_id: str, stop_id: str):
         return {"eta": "Stop not found", "stops_away": -1}
 
     # 5. Calculate stops remaining and distance
-    if target_index <= nearest_stop_index:
+    if target_index < nearest_stop_index:
         return {
             "eta": "Bus has passed your stop",
             "stops_away": 0,
             "minutes": 0
         }
 
-    stops_away = target_index - nearest_stop_index
-
-    # Calculate direct distance from bus to target stop
     target_stop = stops[target_index]
     total_distance_km = haversine_distance(
         bus_lat, bus_lon,
         target_stop["latitude"],
         target_stop["longitude"]
     )
+    effective_speed = max(bus_speed, 10.0)  # min 10 km/h
 
-    # Use actual speed if available, otherwise assume 20 km/h
-    effective_speed = max(bus_speed, 10)  # min 10 km/h
-    minutes = round((total_distance_km / effective_speed) * 60)
+    if target_index == nearest_stop_index:
+        if total_distance_km <= 0.15:  # within 150m is at the stop
+            return {
+                "bus_id": bus_id,
+                "stop_id": stop_id,
+                "stops_away": 0,
+                "distance_km": round(total_distance_km, 2),
+                "minutes": 0,
+                "eta": "Arriving now",
+                "bus_speed_kmh": round(effective_speed, 1)
+            }
+        else:
+            # Bus is nearest to this stop and actively approaching it
+            minutes = max(1, round((total_distance_km / effective_speed) * 60))
+            return {
+                "bus_id": bus_id,
+                "stop_id": stop_id,
+                "stops_away": 1,
+                "distance_km": round(total_distance_km, 2),
+                "minutes": minutes,
+                "eta": f"{minutes} min",
+                "bus_speed_kmh": round(effective_speed, 1)
+            }
+
+    stops_away = target_index - nearest_stop_index
+    minutes = max(1, round((total_distance_km / effective_speed) * 60))
 
     return {
         "bus_id": bus_id,

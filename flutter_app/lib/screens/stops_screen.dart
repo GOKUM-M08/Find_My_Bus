@@ -7,6 +7,7 @@ import 'tracking_screen.dart';
 import '../services/api_client.dart';
 import '../services/language_service.dart';
 import '../services/session_store.dart';
+import '../utils/time_utils.dart';
 import '../widgets/voice_assistant_sheet.dart';
 
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -184,15 +185,7 @@ class _StopsScreenState extends State<StopsScreen> with WidgetsBindingObserver {
         return;
       }
 
-      final rawTimestamp = locRes['timestamp'];
-      bool isRecent = false;
-      if (rawTimestamp != null) {
-        final lastUpdate = DateTime.parse(rawTimestamp.toString()).toUtc();
-        final secondsAgo = DateTime.now().toUtc().difference(lastUpdate).inSeconds;
-        isRecent = secondsAgo < 60;
-      }
-
-      if (!isRecent) {
+      if (!isLiveTimestamp(locRes['timestamp']?.toString())) {
         setState(() {
           _busIsLive = false;
           _isReconnecting = false;

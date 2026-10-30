@@ -12,7 +12,10 @@ import 'profile_screen.dart';
 import 'stops_screen.dart';
 import 'suggest_feature_screen.dart';
 import '../services/language_service.dart';
+import '../services/notification_service.dart';
 import '../services/session_store.dart';
+import '../services/voice_assistant_service.dart';
+import '../utils/time_utils.dart';
 
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
 const Color SECONDARY_BLUE = Color(0xFF1E6BFF);
@@ -31,6 +34,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   final Map<String, bool> _busLiveStatus = {};
   bool _notificationPermissionDenied = false;
   Timer? _liveCheckTimer;
+  StreamSubscription? _fcmSub;
 
   @override
   void initState() {
@@ -41,12 +45,45 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     _liveCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadAllBusesLiveStatus();
     });
+
+    _fcmSub = NotificationService().onForegroundMessage.listen((message) {
+      if (!mounted) return;
+      final title = message.notification?.title ?? 'Bus Update';
+      final body = message.notification?.body ?? '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.notifications_active, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (body.isNotEmpty) Text(body, style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: PRIMARY_BLUE,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      if (body.isNotEmpty) {
+        VoiceAssistantService().speak(body);
+      }
+    });
   }
 
   @override
   void dispose() {
     _languageService.removeListener(_onLanguageChanged);
     _liveCheckTimer?.cancel();
+    _fcmSub?.cancel();
     super.dispose();
   }
 
@@ -157,12 +194,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     for (final busId in busIds) {
       try {
         final res = await api.get('/api/parent/bus/$busId/live');
-        bool isLive = false;
-        if (res is Map && res['timestamp'] != null) {
-          final timestamp = DateTime.parse(res['timestamp'].toString()).toUtc();
-          final diffSeconds = DateTime.now().toUtc().difference(timestamp).inSeconds;
-          isLive = diffSeconds < 60;
-        }
+        final isLive = res is Map ? isLiveTimestamp(res['timestamp']?.toString()) : false;
         if (mounted) {
           setState(() {
             _busLiveStatus[busId] = isLive;

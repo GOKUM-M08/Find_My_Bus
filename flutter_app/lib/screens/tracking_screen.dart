@@ -9,6 +9,8 @@ import '../services/api_client.dart';
 import '../services/language_service.dart';
 import '../services/notification_service.dart';
 import '../services/session_store.dart';
+import '../services/voice_assistant_service.dart';
+import '../utils/time_utils.dart';
 import '../widgets/voice_assistant_sheet.dart';
 
 // Palette matching parent screens
@@ -103,6 +105,9 @@ class _TrackingScreenState extends State<TrackingScreen>
           behavior: SnackBarBehavior.floating,
         ),
       );
+      if (body.isNotEmpty) {
+        VoiceAssistantService().speak(body);
+      }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -231,13 +236,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         return;
       }
 
-      final rawTimestamp = locRes['timestamp'];
-      bool live = false;
-      if (rawTimestamp != null) {
-        final lastUpdate = DateTime.parse(rawTimestamp.toString()).toUtc();
-        final secondsAgo = DateTime.now().toUtc().difference(lastUpdate).inSeconds;
-        live = secondsAgo < 60;
-      }
+      final live = isLiveTimestamp(locRes['timestamp']?.toString());
 
       final lat = (locRes['latitude'] as num?)?.toDouble();
       final lon = (locRes['longitude'] as num?)?.toDouble();

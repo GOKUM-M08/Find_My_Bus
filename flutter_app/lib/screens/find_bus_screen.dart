@@ -9,6 +9,7 @@ import 'suggest_feature_screen.dart';
 import 'about_screen.dart';
 import 'privacy_screen.dart';
 import '../services/language_service.dart';
+import '../utils/time_utils.dart';
 
 // Colors from main.dart
 const Color PRIMARY_BLUE = Color(0xFF0052CC);
@@ -81,13 +82,8 @@ class _FindBusScreenState extends State<FindBusScreen> {
         .from('live_location')
         .select('bus_id, timestamp')
         .inFilter('bus_id', busIds);
-    final now = DateTime.now().toUtc();
     return locations
-        .where((location) {
-          final timestamp = location['timestamp'];
-          if (timestamp == null) return false;
-          return now.difference(DateTime.parse(timestamp).toUtc()).inSeconds < 60;
-        })
+        .where((location) => isLiveTimestamp(location['timestamp']?.toString()))
         .map((location) => location['bus_id'].toString())
         .toSet();
   }

@@ -87,7 +87,7 @@ class _DriverScreenState extends State<DriverScreen> {
         'latitude': pos.latitude,
         'longitude': pos.longitude,
         'speed': (pos.speed * 3.6).clamp(0, 200), // m/s → km/h
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'bus_id');
 
       // Also save to history

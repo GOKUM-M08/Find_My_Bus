@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/admin_drawer.dart';
+import '../utils/time_utils.dart';
 import 'config.dart';
 
 const Color kPrimaryBlue = Color(0xFF0052CC);
@@ -77,11 +78,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
           if (loc != null) {
             speed = (loc['speed'] as num?)?.toDouble();
-            if (loc['timestamp'] != null) {
-              final lastUpdate = DateTime.parse(loc['timestamp']).toUtc();
-              final diffSeconds = DateTime.now().toUtc().difference(lastUpdate).inSeconds;
-              isLive = diffSeconds < 60;
-            }
+            isLive = isLiveTimestamp(loc['timestamp']?.toString());
           }
         } catch (_) {}
 

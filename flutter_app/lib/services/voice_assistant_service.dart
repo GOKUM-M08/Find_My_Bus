@@ -287,10 +287,20 @@ class VoiceAssistantService {
         case BusIntent.eta:
           final data = await _get('/api/parent/bus/$busId/eta$queryParams');
           final eta = data['eta']?.toString().toLowerCase() ?? '';
-          final minutes = data['eta_minutes'] ?? 0;
+          final minutes = data['eta_minutes'] ?? data['minutes'] ?? 0;
           final stopsAway = data['stops_away'] ?? 0;
           if (eta.contains('not available') || (minutes == 0 && stopsAway < 0)) {
             throw VoiceNoLocationException('ETA location not available');
+          }
+          if (eta.contains('passed your stop')) {
+            return langCode == 'ta'
+                ? 'பேருந்து உங்கள் நிறுத்தத்தை கடந்துவிட்டது.'
+                : 'The bus has already passed your stop.';
+          }
+          if (eta.contains('arriving now') || minutes == 0) {
+            return langCode == 'ta'
+                ? 'பேருந்து இப்போது உங்கள் நிறுத்தத்திற்கு வந்துகொண்டிருக்கிறது.'
+                : 'The bus is arriving at your stop now.';
           }
           return _template('tpl_eta', {'minutes': '$minutes'}, langCode: langCode);
 
