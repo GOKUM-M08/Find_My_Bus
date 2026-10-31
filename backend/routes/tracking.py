@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Tuple, Optional, Any
 from fastapi import APIRouter
 from database import supabase, redis_client
-from notifications import send_bus_notification
+from notifications import send_bus_notification, send_alert
 from services.broadcast import (
     save_bus_position,
     get_smoothed_speed,
@@ -558,10 +558,13 @@ def _sync_check_and_notify_parents(bus_id: str) -> None:
             updated_at = float(cached.get("updated_at", 0))
             if updated_at > 0 and (time.time() - updated_at > POSITION_OFFLINE_SECONDS):
                 return
-            _sync_check_and_flip_trip_direction(bus_id, bus_lat, bus_lon)
 
-        current_direction = redis_client.get(f"bus:{bus_id}:trip_direction") or "morning"
-        current_direction = current_direction.decode() if isinstance(current_direction, bytes) else current_direction
+        raw_dir = redis_client.get(f"bus:{bus_id}:trip_direction") or "morning"
+        current_direction = raw_dir.decode() if isinstance(raw_dir, bytes) else raw_dir
+
+        # Self-heal check if bus was stuck in evening and is near morning start
+        if current_direction == "evening" and bus_lat is not None and bus_lon is not None:
+            current_direction = _sync_check_and_flip_trip_direction(bus_id, bus_lat, bus_lon)
 
         # 1. Get stops from memory cache
         stops = get_ordered_stops(bus_id, use_cache=True)
@@ -569,8 +572,9 @@ def _sync_check_and_notify_parents(bus_id: str) -> None:
             return
 
         # 2. Update monotonic progress if coordinates are available
+        passed_index = -1
         if bus_lat is not None and bus_lon is not None:
-            update_bus_progress(bus_id, bus_lat, bus_lon, stops, current_direction)
+            passed_index = update_bus_progress(bus_id, bus_lat, bus_lon, stops, current_direction)
 
         # 3. Look up bus number
         bus_number = cached.get("bus_number") if cached else None
@@ -581,12 +585,52 @@ def _sync_check_and_notify_parents(bus_id: str) -> None:
         bus_number = bus_number or "Your Bus"
 
         today_ist = datetime.now(IST).strftime("%Y-%m-%d")
+        morning_stops = get_morning_stops(bus_id, use_cache=True)
 
+        # ─── EVENT 1: bus_started (MORNING trip only) ────────────────────────
+        if current_direction == "morning" and morning_stops and bus_lat is not None and bus_lon is not None:
+            try:
+                first_stop = morning_stops[0]
+                dist_to_first = haversine_distance(
+                    bus_lat, bus_lon, float(first_stop["latitude"]), float(first_stop["longitude"])
+                )
+                if dist_to_first <= STOP_REACHED_RADIUS_KM:
+                    redis_client.set(f"bus:{bus_id}:was_at_first_stop", "1", ex=10800)
+
+                started_dedup_key = f"notif:started:{bus_id}:{today_ist}"
+                redis_started = redis_client.get(started_dedup_key)
+                is_started_sent = bool(redis_started) and not hasattr(redis_started, "_mock_return_value")
+
+                if not is_started_sent:
+                    was_at_first_raw = redis_client.get(f"bus:{bus_id}:was_at_first_stop")
+                    was_at_first = bool(was_at_first_raw) and not hasattr(was_at_first_raw, "_mock_return_value")
+                    cur_speed = float(cached.get("speed", 0.0))
+
+                    should_send = False
+                    # Normal: was within 150m of first stop and is now > 300m away
+                    if was_at_first and dist_to_first > 0.30:
+                        should_send = True
+                    # Fallback: started > 300m away, still before 2nd stop (passed_index <= 0), moving >= 5 km/h, <= 1km away
+                    elif (not was_at_first) and (0.30 < dist_to_first <= 1.0) and passed_index <= 0 and cur_speed >= 5.0:
+                        should_send = True
+
+                    if should_send:
+                        stop_name = first_stop.get("stop_name", "first stop")
+                        send_alert(
+                            event="bus_started",
+                            bus_id=bus_id,
+                            variables={"bus": bus_number, "stop": stop_name},
+                        )
+                        redis_client.set(started_dedup_key, "1", ex=64800)
+            except Exception as e:
+                print(f"[check_and_notify_parents bus_started error] bus {bus_id}: {e}")
+
+        # ─── EVENT 2: two_stops_away (for each stop on route) ────────────────
         for i, stop in enumerate(stops):
             stop_id = str(stop["id"])
             eta_data = get_eta(bus_id, stop_id)
             stops_away = eta_data.get("stops_away")
-            minutes = eta_data.get("minutes", 5) or 5
+            minutes = eta_data.get("minutes")
             cache_key = f"{bus_id}:{stop_id}"
             dedup_key = f"notif:near:{bus_id}:{stop_id}:{current_direction}:{today_ist}"
 
@@ -595,24 +639,62 @@ def _sync_check_and_notify_parents(bus_id: str) -> None:
                 is_redis_dup = bool(redis_val) and not hasattr(redis_val, "_mock_return_value")
                 already_notified = _notified_stops.get(cache_key, False) or is_redis_dup
                 if not already_notified:
-                    topic = f"bus_{bus_id}_stop_{stop_id}"
                     stop_name = stop.get("stop_name", "your stop")
+                    est_min = minutes if minutes is not None else 5
                     message = (
                         f"Bus is {stops_away} stop{'s' if stops_away > 1 else ''} away from {stop_name}! "
-                        f"Arriving in ~{minutes} min."
+                        f"Arriving in ~{est_min} min."
                     )
                     try:
+                        send_alert(
+                            event="two_stops_away",
+                            bus_id=bus_id,
+                            stop_id=stop_id,
+                            variables={"bus": bus_number, "stop": stop_name, "min": minutes},
+                        )
+                    except Exception as e:
+                        print(f"Failed send_alert for {stop_id}: {e}")
+
+                    try:
+                        topic = f"bus_{bus_id}_stop_{stop_id}"
                         send_bus_notification(
                             topic=topic,
                             bus_number=bus_number,
                             message=message,
                         )
                     except Exception as e:
-                        print(f"Failed to send topic notification to {topic}: {e}")
+                        print(f"Failed legacy notification to {topic}: {e}")
+
                     _notified_stops[cache_key] = True
                     redis_client.set(dedup_key, "1", ex=64800)
             else:
                 _notified_stops[cache_key] = False
+
+        # ─── EVENT 3: reached_college (MORNING trip only) ────────────────────
+        if current_direction == "morning" and morning_stops and bus_lat is not None and bus_lon is not None:
+            try:
+                final_stop = morning_stops[-1]
+                dist_to_final = haversine_distance(
+                    bus_lat, bus_lon, float(final_stop["latitude"]), float(final_stop["longitude"])
+                )
+                if dist_to_final <= STOP_REACHED_RADIUS_KM:
+                    arrived_dedup_key = f"notif:arrived:{bus_id}:{today_ist}"
+                    redis_arrived = redis_client.get(arrived_dedup_key)
+                    is_arrived_sent = bool(redis_arrived) and not hasattr(redis_arrived, "_mock_return_value")
+                    if not is_arrived_sent:
+                        college_name = final_stop.get("stop_name", "the college")
+                        send_alert(
+                            event="reached_college",
+                            bus_id=bus_id,
+                            variables={"bus": bus_number, "college": college_name},
+                        )
+                        redis_client.set(arrived_dedup_key, "1", ex=64800)
+            except Exception as e:
+                print(f"[check_and_notify_parents reached_college error] bus {bus_id}: {e}")
+
+        # 4. Flip direction if bus has arrived at the final stop of current direction
+        if bus_lat is not None and bus_lon is not None:
+            _sync_check_and_flip_trip_direction(bus_id, bus_lat, bus_lon)
 
     except Exception as e:
         print(f"[check_and_notify_parents error] bus {bus_id}: {e}")
