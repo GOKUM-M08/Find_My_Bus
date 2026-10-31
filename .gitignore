@@ -21,3 +21,5 @@ admin_panel/build/
 
 # OS
 .DS_Store
+firebase_service_account.json
+*firebase-adminsdk*.json
