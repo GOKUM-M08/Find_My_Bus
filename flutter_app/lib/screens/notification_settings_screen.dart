@@ -162,7 +162,7 @@ class _NotificationSettingsScreenState
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         child: SwitchListTile(
           value: _prefs.enabled,
-          activeColor: primaryBlue,
+          activeThumbColor: primaryBlue,
           title: Text(
             isTa ? 'பேருந்து அறிவிப்புகள்' : 'Bus alerts',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),

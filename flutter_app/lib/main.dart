@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-import 'screens/find_bus_screen.dart';
 import 'screens/parent_home_screen.dart';
 import 'screens/phone_login_screen.dart';
 import 'services/notification_service.dart';
