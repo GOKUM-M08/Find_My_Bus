@@ -28,14 +28,11 @@ POST /traccar-forward is kept as a convenience for manual testing
 """
 
 from fastapi import APIRouter, Request, HTTPException
-import httpx
 from datetime import datetime, timezone
 from database import supabase
+from services.broadcast import process_bus_position
 
 router = APIRouter()
-
-# Internal broadcast endpoint lives in main.py, on the same running instance.
-INTERNAL_BROADCAST_URL = "http://127.0.0.1:8000/internal/broadcast/{bus_id}"
 
 
 async def _handle_position(unique_id, latitude, longitude, speed_raw, speed_unit: str = "knots"):
@@ -99,15 +96,17 @@ async def _handle_position(unique_id, latitude, longitude, speed_raw, speed_unit
     ).execute()
 
     # Reuse the existing broadcast pipeline (Redis cache, WebSocket push, parent notifications)
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.post(
-                INTERNAL_BROADCAST_URL.format(bus_id=bus_id),
-                json={"latitude": float(latitude), "longitude": float(longitude), "speed": speed_kmh},
-                timeout=5,
-            )
-        except httpx.HTTPError as e:
-            print(f"[traccar_forward] internal broadcast failed: {e}")
+    try:
+        await process_bus_position(
+            bus_id=bus_id,
+            lat=float(latitude),
+            lon=float(longitude),
+            speed=speed_kmh,
+            device_id=str(unique_id),
+            source="traccar_forward",
+        )
+    except Exception as e:
+        print(f"[traccar_forward] process_bus_position failed: {e}")
 
     return {"status": "ok", "bus_id": bus_id, "bus_number": bus.get("bus_number")}
 

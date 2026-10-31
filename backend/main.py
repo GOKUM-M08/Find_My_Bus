@@ -25,9 +25,13 @@ app.include_router(gps.router, tags=["GPS Ingest"])
 app.include_router(traccar_router, tags=["Traccar Forward"])
 app.include_router(parent.router, prefix="/api/parent", tags=["Parent"])
 
-# Store active WebSocket connections
-# Key: bus_id → List of connected parent WebSockets
-active_connections: dict = {}
+from services.broadcast import (
+    active_connections,
+    register_connection,
+    remove_connection,
+    broadcast_location,
+    process_bus_position,
+)
 
 @app.get("/")
 def root():
@@ -46,57 +50,38 @@ async def websocket_track(websocket: WebSocket, bus_id: str):
         return
 
     await websocket.accept()
-    
-    if bus_id not in active_connections:
-        active_connections[bus_id] = []
-    active_connections[bus_id].append(websocket)
-    
+    register_connection(bus_id, websocket)
+
     try:
         while True:
             # Keep connection alive, send ping every 30 seconds
             await asyncio.sleep(30)
             await websocket.send_text(json.dumps({"type": "ping"}))
     except WebSocketDisconnect:
-        if bus_id in active_connections and websocket in active_connections[bus_id]:
-            active_connections[bus_id].remove(websocket)
-
-async def broadcast_location(bus_id: str, location_data: dict):
-    """
-    Called by GPS listener when new location arrives.
-    Pushes to all parents watching this bus.
-    """
-    if bus_id in active_connections:
-        dead_connections = []
-        for ws in active_connections[bus_id]:
-            try:
-                await ws.send_text(json.dumps(location_data))
-            except:
-                dead_connections.append(ws)
-        # Clean up dead connections
-        for ws in dead_connections:
-            active_connections[bus_id].remove(ws)
+        remove_connection(bus_id, websocket)
 
 @app.post("/internal/broadcast/{bus_id}")
 async def internal_broadcast(bus_id: str, request: Request):
     """
-    Called by gps_listener.py every time a new GPS point arrives.
-    Pushes the update to all parents connected via WebSocket, and
-    checks whether any parent's stop is now 2 stops away (STEP 11.4).
+    Called by driver app or external listener when a new GPS point arrives.
+    Persists to Redis with epoch updated_at and EMA smoothed speed,
+    pushes WebSocket broadcast, and runs parent notification checks.
     """
     location_data = await request.json()
+    lat = float(location_data["latitude"])
+    lon = float(location_data["longitude"])
+    speed = float(location_data.get("speed", 0.0))
+    device_id = location_data.get("device_id")
 
-    # Populate Redis so get_eta() has fresh coordinates to read,
-    # regardless of whether this came from gps_listener.py or the driver app
-    redis_client.hset(f"bus:{bus_id}", mapping={
-        "latitude": location_data["latitude"],
-        "longitude": location_data["longitude"],
-        "speed": location_data.get("speed", 0),
-    })
-    redis_client.expire(f"bus:{bus_id}", 3600)
-
-    await broadcast_location(bus_id, location_data)
-    await tracking.check_and_notify_parents(bus_id)
-    return {"status": "broadcast sent"}
+    res = await process_bus_position(
+        bus_id=bus_id,
+        lat=lat,
+        lon=lon,
+        speed=speed,
+        device_id=device_id,
+        source="internal_broadcast",
+    )
+    return {"status": "broadcast sent", **res}
 
 if __name__ == "__main__":
     import uvicorn
