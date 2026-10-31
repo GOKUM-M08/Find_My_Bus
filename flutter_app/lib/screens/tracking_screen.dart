@@ -308,9 +308,37 @@ class _TrackingScreenState extends State<TrackingScreen>
       final data = await api.get('/api/parent/bus/${widget.busId}/eta/$stopId');
       if (!mounted) return;
       if (data is Map) {
+        final status = data['status']?.toString();
+        final rawEta = data['eta']?.toString() ?? 'Calculating...';
+        final stopsAway = (data['stops_away'] as num?)?.toInt() ?? 0;
+        final minutes = (data['minutes'] as num?)?.toInt();
+
+        String displayEta;
+        switch (status) {
+          case 'arrived':
+            displayEta = 'Bus is at your stop';
+            break;
+          case 'passed':
+            displayEta = 'Bus has passed your stop';
+            break;
+          case 'offline':
+            displayEta = 'Bus offline';
+            break;
+          case 'no_data':
+            displayEta = 'Waiting for bus location';
+            break;
+          case 'approaching':
+            displayEta = (minutes != null && stopsAway > 0)
+                ? 'Arriving in $minutes min • $stopsAway ${stopsAway == 1 ? 'stop' : 'stops'} away'
+                : rawEta;
+            break;
+          default:
+            displayEta = rawEta;
+        }
+
         setState(() {
-          _eta = data['eta']?.toString() ?? 'Calculating...';
-          _stopsAway = (data['stops_away'] as num?)?.toInt() ?? 0;
+          _eta = displayEta;
+          _stopsAway = stopsAway;
         });
       }
     } catch (_) {
