@@ -109,24 +109,40 @@ class NotificationService {
   }
 
   /// Automatically synchronizes FCM topic subscriptions for the parent's students.
-  /// Desired topics: `bus_${student.busId}_stop_${student.stopId}`.
-  /// Unsubscribes from old topics, subscribes to new topics, and updates SharedPreferences ('subscribed_topics').
-  Future<Set<String>> syncSubscriptions(List<StudentInfo> students) async {
-    final desiredTopics = <String>{};
-    for (final s in students) {
-      final busId = s.busId?.toString().trim();
-      final stopId = s.stopId?.toString().trim();
-      if (busId != null && busId.isNotEmpty && stopId != null && stopId.isNotEmpty) {
-        desiredTopics.add('bus_${busId}_stop_${stopId}');
-      }
-    }
-
+  /// If [students] is null, falls back to [SessionStore().parentProfile?.students].
+  /// When notif_enabled is false, desiredTopics is empty (all unsubscribed).
+  /// When notif_enabled is true, subscribes to:
+  /// - `bus_${busId}_stop_${stopId}_${lang}`
+  /// - `bus_${busId}_all_${lang}`
+  /// Unsubscribes from obsolete/legacy topics and saves active topics in SharedPreferences.
+  Future<Set<String>> syncSubscriptions([List<StudentInfo>? students]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final notifEnabled = prefs.getBool('notif_enabled') ?? true;
+      final notifLang = prefs.getString('notif_lang') ?? 'ta';
+
+      List<StudentInfo> targetStudents = students ?? [];
+      if (students == null) {
+        final profile = await SessionStore.instance.getProfile();
+        targetStudents = profile?.students ?? [];
+      }
+      final desiredTopics = <String>{};
+
+      if (notifEnabled) {
+        for (final s in targetStudents) {
+          final busId = s.busId?.toString().trim();
+          final stopId = s.stopId?.toString().trim();
+          if (busId != null && busId.isNotEmpty && stopId != null && stopId.isNotEmpty) {
+            desiredTopics.add('bus_${busId}_stop_${stopId}_$notifLang');
+            desiredTopics.add('bus_${busId}_all_$notifLang');
+          }
+        }
+      }
+
       final currentList = prefs.getStringList('subscribed_topics') ?? [];
       final currentTopics = currentList.toSet();
 
-      // 1. Unsubscribe from topics that are no longer associated with any student
+      // 1. Unsubscribe from topics that are no longer associated with active desired topics
       final toRemove = currentTopics.difference(desiredTopics);
       for (final topic in toRemove) {
         try {
@@ -135,6 +151,24 @@ class NotificationService {
           currentTopics.remove(topic);
         } catch (e) {
           debugPrint('[FCM Sync Error] Failed to unsubscribe from $topic: $e');
+        }
+      }
+
+      // Also clean up any legacy un-suffixed topics for these students
+      for (final s in targetStudents) {
+        final busId = s.busId?.toString().trim();
+        final stopId = s.stopId?.toString().trim();
+        if (busId != null && busId.isNotEmpty && stopId != null && stopId.isNotEmpty) {
+          final legacyTopic = 'bus_${busId}_stop_$stopId';
+          if (currentTopics.contains(legacyTopic)) {
+            try {
+              debugPrint('[FCM Sync] Unsubscribing from legacy topic: $legacyTopic');
+              await _unsubscribeTopic(legacyTopic);
+              currentTopics.remove(legacyTopic);
+            } catch (e) {
+              debugPrint('[FCM Sync Error] Failed to unsubscribe legacy $legacyTopic: $e');
+            }
+          }
         }
       }
 
@@ -166,7 +200,7 @@ class NotificationService {
       return currentTopics;
     } catch (e) {
       debugPrint('[NotificationService syncSubscriptions error] $e');
-      return desiredTopics;
+      return {};
     }
   }
 
