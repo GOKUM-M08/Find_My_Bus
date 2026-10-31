@@ -139,6 +139,25 @@ def get_bus_location_summary(bus_id: str):
         return {"nearest_landmark": "location not available", "distance_km": 0.0}
 
 
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def parse_expected_time_today(expected_time_str: Optional[str], now_ist: datetime) -> Optional[datetime]:
+    """Parse time string like '07:25 AM' or '07:25' into a timezone-aware datetime for today in IST."""
+    if not expected_time_str:
+        return None
+    s = str(expected_time_str).strip().upper()
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M:%S", "%H:%M"):
+        try:
+            t = datetime.strptime(s, fmt).time()
+            return datetime.combine(now_ist.date(), t, tzinfo=now_ist.tzinfo)
+        except ValueError:
+            continue
+    return None
+
+
 @router.get("/{bus_id}/eta")
 def get_eta_default(bus_id: str, stop_id: Optional[str] = None):
     """
@@ -146,18 +165,14 @@ def get_eta_default(bus_id: str, stop_id: Optional[str] = None):
     defaults to the bus's next upcoming stop on the route.
     """
     try:
-        if not supabase:
-            return {"eta_minutes": 0, "eta": "Location not available", "stops_away": -1}
-
         stops = get_ordered_stops(bus_id)
-
         if not stops:
-            return {"eta_minutes": 0, "eta": "Stops not found", "stops_away": -1}
+            return {"eta_minutes": None, "eta": "Waiting for bus location", "stops_away": None, "status": "no_data"}
 
         if not stop_id or stop_id == "null":
             lat, lon = _get_bus_coordinates(bus_id)
             if lat is None or lon is None:
-                return {"eta_minutes": 0, "eta": "Location not available", "stops_away": -1}
+                return {"eta_minutes": None, "eta": "Waiting for bus location", "stops_away": None, "status": "no_data"}
 
             nearest_index = 0
             min_distance = float('inf')
@@ -166,30 +181,75 @@ def get_eta_default(bus_id: str, stop_id: Optional[str] = None):
                 if dist < min_distance:
                     min_distance = dist
                     nearest_index = i
-            
+
             target_index = min(nearest_index + 1, len(stops) - 1)
             stop_id = str(stops[target_index]["id"])
 
         result = get_eta(bus_id, stop_id)
         return {
-            "eta_minutes": result.get("minutes", 0),
+            "eta_minutes": result.get("minutes"),
             "eta": result.get("eta", "unknown"),
-            "stops_away": result.get("stops_away", -1),
+            "stops_away": result.get("stops_away"),
+            "status": result.get("status", "no_data"),
+            "stop_id": stop_id,
         }
     except Exception:
-        return {"eta_minutes": 0, "eta": "Location not available", "stops_away": -1}
+        return {"eta_minutes": None, "eta": "Waiting for bus location", "stops_away": None, "status": "no_data"}
 
 
 @router.get("/{bus_id}/status")
 def get_bus_status(bus_id: str, stop_id: Optional[str] = None):
-    """Is the bus running late relative to the target stop's expected arrival time."""
+    """
+    Compute whether bus is running late relative to the target stop's expected_time.
+    Late means predicted arrival time (IST) is more than 5 minutes after expected_time;
+    delay_minutes is the difference.
+    """
     try:
+        stops = get_ordered_stops(bus_id)
         eta_data = get_eta_default(bus_id, stop_id)
-        minutes = eta_data.get("eta_minutes", 0)
-        is_late = minutes > 10
-        return {"is_late": is_late, "delay_minutes": max(0, minutes - 10) if is_late else 0}
+        effective_stop_id = eta_data.get("stop_id") or stop_id
+
+        target_stop = None
+        if effective_stop_id and stops:
+            for s in stops:
+                if str(s.get("id")) == str(effective_stop_id):
+                    target_stop = s
+                    break
+
+        expected_time_str = target_stop.get("expected_time") if target_stop else None
+        now_ist = datetime.now(IST)
+        expected_dt = parse_expected_time_today(expected_time_str, now_ist)
+
+        minutes = eta_data.get("eta_minutes")
+        status = eta_data.get("status")
+
+        if expected_dt and minutes is not None and status == "approaching":
+            predicted_dt = now_ist + timedelta(minutes=int(minutes))
+            diff_seconds = (predicted_dt - expected_dt).total_seconds()
+            diff_minutes = int(diff_seconds // 60)
+            if diff_minutes > 5:
+                return {
+                    "is_late": True,
+                    "delay_minutes": diff_minutes,
+                    "expected_time": expected_time_str,
+                    "status": status,
+                }
+            return {
+                "is_late": False,
+                "delay_minutes": 0,
+                "expected_time": expected_time_str,
+                "status": status,
+            }
+
+        # Fallback if expected_time is not set or bus is not approaching
+        return {
+            "is_late": False,
+            "delay_minutes": 0,
+            "expected_time": expected_time_str,
+            "status": status or "no_data",
+        }
     except Exception:
-        return {"is_late": False, "delay_minutes": 0}
+        return {"is_late": False, "delay_minutes": 0, "status": "no_data"}
 
 
 @router.get("/{bus_id}/stops-away")
@@ -197,6 +257,6 @@ def get_stops_away(bus_id: str, stop_id: Optional[str] = None):
     """Get number of stops away from target stop."""
     try:
         eta_data = get_eta_default(bus_id, stop_id)
-        return {"stops_away": eta_data.get("stops_away", -1)}
+        return {"stops_away": eta_data.get("stops_away"), "status": eta_data.get("status")}
     except Exception:
-        return {"stops_away": -1}
+        return {"stops_away": None, "status": "no_data"}

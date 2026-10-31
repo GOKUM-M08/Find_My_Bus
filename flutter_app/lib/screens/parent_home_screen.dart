@@ -9,6 +9,7 @@ import 'faq_screen.dart';
 import 'login_screen.dart';
 import 'privacy_screen.dart';
 import 'profile_screen.dart';
+import 'notification_settings_screen.dart';
 import 'stops_screen.dart';
 import 'suggest_feature_screen.dart';
 import '../services/language_service.dart';
@@ -660,6 +661,19 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+            },
+          ),
+
+          // Notification Settings
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined, color: PRIMARY_BLUE),
+            title: Text(_languageService.getText('notification_settings')),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationSettingsScreen()),
               );
             },
           ),

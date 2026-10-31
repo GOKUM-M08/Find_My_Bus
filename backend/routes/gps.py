@@ -25,15 +25,7 @@ async def gps_ingest(
     bus_id = result.data[0]["id"]
     now = datetime.now(timezone.utc).isoformat()
 
-    # 2. Redis
-    redis_client.hset(f"bus:{bus_id}", mapping={
-        "latitude": lat,
-        "longitude": lon,
-        "speed": speed,
-    })
-    redis_client.expire(f"bus:{bus_id}", 3600)
-
-    # 3. live_location — uses "timestamp" (correct, don't change this one)
+    # 2. Persist to live_location (Supabase)
     supabase.table("live_location").upsert({
         "bus_id": bus_id,
         "device_id": device_id,
@@ -43,30 +35,26 @@ async def gps_ingest(
         "timestamp": now,
     }, on_conflict="bus_id").execute()
 
-    # 4. location_history — uses "recorded_at", NOT "timestamp"
+    # 3. location_history
     supabase.table("location_history").insert({
         "bus_id": bus_id,
         "device_id": device_id,
         "latitude": lat,
         "longitude": lon,
         "speed": speed,
-        "recorded_at": now,   # <-- this is the only line that changed
+        "recorded_at": now,
     }).execute()
 
-    # 5. Notify parents
-    from main import broadcast_location, active_connections
-    from routes import tracking
-
-    location_data = {
-        "bus_id": bus_id,
-        "device_id": device_id,
-        "latitude": lat,
-        "longitude": lon,
-        "speed": speed,
-        "timestamp": now,
-    }
-    await broadcast_location(bus_id, location_data)
-    await tracking.check_and_notify_parents(bus_id)
+    # 4. Centralized Redis save (with updated_at & EMA speed), WebSocket broadcast, and notification checks
+    from services.broadcast import process_bus_position
+    await process_bus_position(
+        bus_id=bus_id,
+        lat=lat,
+        lon=lon,
+        speed=speed,
+        device_id=device_id,
+        source="gps_ingest",
+    )
 
     print(f"[gps/ingest] Bus {bus_id} ({device_id}) -> {lat}, {lon}")
     return {"status": "ok", "bus_id": bus_id}

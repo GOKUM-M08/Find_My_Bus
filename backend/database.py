@@ -27,7 +27,35 @@ if redis_host:
     )
 else:
     class DummyRedis:
-        def hgetall(self, name): return {}
-        def hset(self, name, mapping=None): pass
-        def expire(self, name, time): pass
+        def __init__(self):
+            self._kv = {}
+            self._hash = {}
+        def get(self, name):
+            return self._kv.get(name)
+        def set(self, name, value, ex=None):
+            self._kv[name] = str(value)
+            return True
+        def delete(self, *names):
+            count = 0
+            for n in names:
+                if n in self._kv:
+                    del self._kv[n]
+                    count += 1
+                if n in self._hash:
+                    del self._hash[n]
+                    count += 1
+            return count
+        def hgetall(self, name):
+            return dict(self._hash.get(name, {}))
+        def hset(self, name, key=None, value=None, mapping=None):
+            if name not in self._hash:
+                self._hash[name] = {}
+            if mapping:
+                for k, v in mapping.items():
+                    self._hash[name][str(k)] = str(v)
+            if key is not None and value is not None:
+                self._hash[name][str(key)] = str(value)
+            return True
+        def expire(self, name, time):
+            return True
     redis_client = DummyRedis()
