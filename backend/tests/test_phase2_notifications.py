@@ -47,9 +47,9 @@ class TestPhase2Notifications:
         # 1. bus_started
         ch_ta, sound_ta = get_channel_info(EVENT_BUS_STARTED, "ta")
         ch_en, sound_en = get_channel_info(EVENT_BUS_STARTED, "en")
-        assert ch_ta == "bus_started_ta_v1"
+        assert ch_ta == "bus_started_ta_v2"
         assert sound_ta == "bus_started_ta"
-        assert ch_en == "bus_started_en_v1"
+        assert ch_en == "bus_started_en_v2"
         assert sound_en == "bus_started_en"
 
         title_ta, body_ta = get_notification_content(EVENT_BUS_STARTED, "ta", {"bus": "24", "stop": "Tiruvallur"})
@@ -76,7 +76,7 @@ class TestPhase2Notifications:
 
         # 3. reached_college
         ch_arr_ta, sound_arr_ta = get_channel_info(EVENT_REACHED_COLLEGE, "ta")
-        assert ch_arr_ta == "bus_arrived_ta_v1"
+        assert ch_arr_ta == "bus_arrived_ta_v2"
         assert sound_arr_ta == "bus_arrived_ta"
 
         _, body_ta_arr = get_notification_content(EVENT_REACHED_COLLEGE, "ta", {"bus": "24", "college": "RMKCET"})
@@ -112,7 +112,7 @@ class TestPhase2Notifications:
 
         # Verify android notification options (channel_id, high priority)
         ta_msg = next(m for m in sent_messages if m.topic == "bus_bus-99_stop_stop-10_ta")
-        assert ta_msg.android.notification.channel_id == "bus_near_ta_v1"
+        assert ta_msg.android.notification.channel_id == "bus_near_ta_v2"
         assert ta_msg.android.notification.sound == "bus_near_ta"
         assert ta_msg.android.priority == "high"
         assert ta_msg.data["event"] == "two_stops_away"

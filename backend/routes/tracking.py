@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Tuple, Optional, Any
 from fastapi import APIRouter
 from database import supabase, redis_client
-from notifications import send_bus_notification, send_alert
+from notifications import send_alert
 from services.broadcast import (
     save_bus_position,
     get_smoothed_speed,
@@ -655,15 +655,7 @@ def _sync_check_and_notify_parents(bus_id: str) -> None:
                     except Exception as e:
                         print(f"Failed send_alert for {stop_id}: {e}")
 
-                    try:
-                        topic = f"bus_{bus_id}_stop_{stop_id}"
-                        send_bus_notification(
-                            topic=topic,
-                            bus_number=bus_number,
-                            message=message,
-                        )
-                    except Exception as e:
-                        print(f"Failed legacy notification to {topic}: {e}")
+                    
 
                     _notified_stops[cache_key] = True
                     redis_client.set(dedup_key, "1", ex=64800)
