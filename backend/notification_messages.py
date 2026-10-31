@@ -29,16 +29,16 @@ EVENT_ALIASES = {
 # Android notification channels (versioned) and raw sound asset names
 EVENT_CHANNELS: Dict[str, Dict[str, Dict[str, str]]] = {
     EVENT_BUS_STARTED: {
-        "ta": {"channel_id": "bus_started_ta_v1", "sound": "bus_started_ta"},
-        "en": {"channel_id": "bus_started_en_v1", "sound": "bus_started_en"},
+        "ta": {"channel_id": "bus_started_ta_v2", "sound": "bus_started_ta"},
+        "en": {"channel_id": "bus_started_en_v2", "sound": "bus_started_en"},
     },
     EVENT_TWO_STOPS_AWAY: {
-        "ta": {"channel_id": "bus_near_ta_v1", "sound": "bus_near_ta"},
-        "en": {"channel_id": "bus_near_en_v1", "sound": "bus_near_en"},
+        "ta": {"channel_id": "bus_near_ta_v2", "sound": "bus_near_ta"},
+        "en": {"channel_id": "bus_near_en_v2", "sound": "bus_near_en"},
     },
     EVENT_REACHED_COLLEGE: {
-        "ta": {"channel_id": "bus_arrived_ta_v1", "sound": "bus_arrived_ta"},
-        "en": {"channel_id": "bus_arrived_en_v1", "sound": "bus_arrived_en"},
+        "ta": {"channel_id": "bus_arrived_ta_v2", "sound": "bus_arrived_ta"},
+        "en": {"channel_id": "bus_arrived_en_v2", "sound": "bus_arrived_en"},
     },
 }
 
@@ -78,7 +78,7 @@ def get_channel_info(event: str, lang: str) -> Tuple[str, str]:
     c_event = canonicalize_event(event)
     info = EVENT_CHANNELS.get(c_event, {}).get(lang)
     if not info:
-        info = EVENT_CHANNELS.get(c_event, {}).get("en", {"channel_id": "bus_near_en_v1", "sound": "bus_near_en"})
+        info = EVENT_CHANNELS.get(c_event, {}).get("en", {"channel_id": "bus_near_en_v2", "sound": "bus_near_en"})
     return info["channel_id"], info["sound"]
 
 

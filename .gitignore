@@ -23,3 +23,4 @@ admin_panel/build/
 .DS_Store
 firebase_service_account.json
 *firebase-adminsdk*.json
+flutter_app/android/.kotlin/

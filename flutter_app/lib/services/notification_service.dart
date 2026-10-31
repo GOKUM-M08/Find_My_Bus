@@ -46,37 +46,37 @@ class NotificationService {
 
   static const List<Map<String, String>> channelDefinitions = [
     {
-      'id': 'bus_started_ta_v1',
+      'id': 'bus_started_ta_v2',
       'name': 'பேருந்து புறப்பட்டது (Bus Started)',
       'desc': 'பேருந்து முதல் நிறுத்தத்திலிருந்து புறப்படும் போது ஒலிக்கும் அறிவிப்பு',
       'sound': 'bus_started_ta',
     },
     {
-      'id': 'bus_near_ta_v1',
+      'id': 'bus_near_ta_v2',
       'name': 'பேருந்து அருகில் வருகிறது (Bus Near)',
       'desc': 'பேருந்து 2 நிறுத்தங்களுக்கு முன்பு வரும் போது ஒலிக்கும் அறிவிப்பு',
       'sound': 'bus_near_ta',
     },
     {
-      'id': 'bus_arrived_ta_v1',
+      'id': 'bus_arrived_ta_v2',
       'name': 'கல்லூரி அடைந்தது (Bus Reached College)',
       'desc': 'பேருந்து கல்லூரி சென்றடைந்ததும் ஒலிக்கும் அறிவிப்பு',
       'sound': 'bus_arrived_ta',
     },
     {
-      'id': 'bus_started_en_v1',
+      'id': 'bus_started_en_v2',
       'name': 'Bus Started',
       'desc': 'Alert when bus departs from the first stop',
       'sound': 'bus_started_en',
     },
     {
-      'id': 'bus_near_en_v1',
+      'id': 'bus_near_en_v2',
       'name': 'Bus Near Stop',
       'desc': 'Alert when bus is 2 stops away from your stop',
       'sound': 'bus_near_en',
     },
     {
-      'id': 'bus_arrived_en_v1',
+      'id': 'bus_arrived_en_v2',
       'name': 'Bus Reached College',
       'desc': 'Alert when bus reaches the college campus',
       'sound': 'bus_arrived_en',
@@ -161,7 +161,7 @@ class NotificationService {
 
       final channelId = message.data['channel_id']?.toString() ??
           notif?.android?.channelId ??
-          'bus_near_ta_v1';
+          'bus_near_ta_v2';
 
       final match = channelDefinitions.firstWhere(
         (c) => c['id'] == channelId,
