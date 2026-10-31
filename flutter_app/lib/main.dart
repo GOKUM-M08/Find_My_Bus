@@ -8,6 +8,7 @@ import 'screens/find_bus_screen.dart';
 import 'screens/parent_home_screen.dart';
 import 'screens/phone_login_screen.dart';
 import 'services/notification_service.dart';
+import 'services/notification_prefs.dart';
 import 'services/session_store.dart';
 import 'services/language_service.dart';
 
@@ -28,6 +29,7 @@ void main() async {
 
   if (!kIsWeb) {
     await Firebase.initializeApp();
+    await NotificationPrefs().init();
     await NotificationService().initialize();
   }
 

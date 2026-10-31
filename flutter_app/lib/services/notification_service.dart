@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'session_store.dart';
@@ -21,6 +22,13 @@ class NotificationService {
   FirebaseMessaging? _customFcm;
   FirebaseMessaging get _fcm => _customFcm ??= FirebaseMessaging.instance;
   set fcmInstance(FirebaseMessaging messaging) => _customFcm = messaging;
+
+  FlutterLocalNotificationsPlugin? _customLocalNotifications;
+  FlutterLocalNotificationsPlugin get localNotifications =>
+      _customLocalNotifications ??= FlutterLocalNotificationsPlugin();
+  set localNotificationsPlugin(FlutterLocalNotificationsPlugin plugin) =>
+      _customLocalNotifications = plugin;
+
   bool _initialized = false;
 
   /// Test hooks for unit testing without Firebase native channel.
@@ -36,7 +44,46 @@ class NotificationService {
   Stream<RemoteMessage> get onForegroundMessage =>
       _foregroundMessageController.stream;
 
-  /// Initializes FCM permissions, handlers, and prints debug logs.
+  static const List<Map<String, String>> channelDefinitions = [
+    {
+      'id': 'bus_started_ta_v1',
+      'name': 'பேருந்து புறப்பட்டது (Bus Started)',
+      'desc': 'பேருந்து முதல் நிறுத்தத்திலிருந்து புறப்படும் போது ஒலிக்கும் அறிவிப்பு',
+      'sound': 'bus_started_ta',
+    },
+    {
+      'id': 'bus_near_ta_v1',
+      'name': 'பேருந்து அருகில் வருகிறது (Bus Near)',
+      'desc': 'பேருந்து 2 நிறுத்தங்களுக்கு முன்பு வரும் போது ஒலிக்கும் அறிவிப்பு',
+      'sound': 'bus_near_ta',
+    },
+    {
+      'id': 'bus_arrived_ta_v1',
+      'name': 'கல்லூரி அடைந்தது (Bus Reached College)',
+      'desc': 'பேருந்து கல்லூரி சென்றடைந்ததும் ஒலிக்கும் அறிவிப்பு',
+      'sound': 'bus_arrived_ta',
+    },
+    {
+      'id': 'bus_started_en_v1',
+      'name': 'Bus Started',
+      'desc': 'Alert when bus departs from the first stop',
+      'sound': 'bus_started_en',
+    },
+    {
+      'id': 'bus_near_en_v1',
+      'name': 'Bus Near Stop',
+      'desc': 'Alert when bus is 2 stops away from your stop',
+      'sound': 'bus_near_en',
+    },
+    {
+      'id': 'bus_arrived_en_v1',
+      'name': 'Bus Reached College',
+      'desc': 'Alert when bus reaches the college campus',
+      'sound': 'bus_arrived_en',
+    },
+  ];
+
+  /// Initializes FCM permissions, native notification channels, and handlers.
   Future<void> initialize() async {
     if (_initialized) return;
 
@@ -51,6 +98,33 @@ class NotificationService {
       debugPrint(
           '[FCM Permission Status] Authorization: ${settings.authorizationStatus}');
 
+      // Initialize flutter_local_notifications for channel creation and foreground audio alerts
+      try {
+        const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+        const initSettings = InitializationSettings(android: androidInit);
+        await localNotifications.initialize(settings: initSettings);
+
+        final androidImpl = localNotifications
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        if (androidImpl != null) {
+          for (final def in channelDefinitions) {
+            final soundName = def['sound']!;
+            final channel = AndroidNotificationChannel(
+              def['id']!,
+              def['name']!,
+              description: def['desc'],
+              importance: Importance.max,
+              sound: RawResourceAndroidNotificationSound(soundName),
+              playSound: true,
+              enableVibration: true,
+            );
+            await androidImpl.createNotificationChannel(channel);
+          }
+        }
+      } catch (e) {
+        debugPrint('[Local Notifications Init Error] $e');
+      }
+
       // Register top-level background message handler
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
@@ -59,6 +133,7 @@ class NotificationService {
         debugPrint(
             '[FCM Foreground Received] Title: ${message.notification?.title}, Body: ${message.notification?.body}');
         _foregroundMessageController.add(message);
+        _showForegroundNotification(message);
       });
 
       // Listen to notification tap events when app is opened from background
@@ -75,6 +150,46 @@ class NotificationService {
       debugPrint('[FCM Initialization] Completed successfully.');
     } catch (e, stack) {
       debugPrint('[FCM Initialization ERROR] Exception: $e\nStack: $stack');
+    }
+  }
+
+  Future<void> _showForegroundNotification(RemoteMessage message) async {
+    try {
+      final notif = message.notification;
+      final title = notif?.title ?? message.data['title'] ?? 'Find My Bus';
+      final body = notif?.body ?? message.data['body'] ?? '';
+
+      final channelId = message.data['channel_id']?.toString() ??
+          notif?.android?.channelId ??
+          'bus_near_ta_v1';
+
+      final match = channelDefinitions.firstWhere(
+        (c) => c['id'] == channelId,
+        orElse: () => channelDefinitions[1],
+      );
+      final soundName = match['sound']!;
+
+      final androidDetails = AndroidNotificationDetails(
+        channelId,
+        match['name']!,
+        channelDescription: match['desc'],
+        importance: Importance.max,
+        priority: Priority.high,
+        sound: RawResourceAndroidNotificationSound(soundName),
+        playSound: true,
+        icon: '@mipmap/ic_launcher',
+      );
+
+      final notifDetails = NotificationDetails(android: androidDetails);
+      final notifId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      await localNotifications.show(
+        id: notifId,
+        title: title,
+        body: body,
+        notificationDetails: notifDetails,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService foreground show error] $e');
     }
   }
 
